@@ -1,0 +1,28 @@
+{
+  "name": "itemdex",
+  "version": "0.2.0",
+  "private": true,
+  "description": "ITEMDEX - catalog your stuff as retro collectible cards, powered by Gemma",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c yellow,cyan \"npm run dev -w @itemdex/server\" \"npm run dev -w @itemdex/web\"",
+    "build": "npm run build -w @itemdex/server && npm run build -w @itemdex/web",
+    "start": "npm run start -w @itemdex/server",
+    "desktop": "npm run build -w @itemdex/web && npm run build -w @itemdex/desktop && npm run start -w @itemdex/desktop",
+    "dist:desktop": "npm run build -w @itemdex/web && npm run dist -w @itemdex/desktop",
+    "db:migrate": "npm run migrate -w @itemdex/server",
+    "db:import-legacy": "npm run import-legacy -w @itemdex/server --",
+    "typecheck": "tsc -p packages/shared && tsc -p apps/server && tsc -p apps/web && tsc -p apps/desktop"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "typescript": "^5.9.3"
+  }
+}

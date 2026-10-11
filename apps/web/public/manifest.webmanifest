@@ -1,0 +1,12 @@
+{
+  "name": "ITEMDEX",
+  "short_name": "ITEMDEX",
+  "description": "Catalog your stuff as retro collectible cards, powered by Gemma.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0b1e",
+  "theme_color": "#1d1640",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

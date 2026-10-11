@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; script-src 'self'" />
+  <title>ITEMDEX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;600;700&family=VT323&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="crt" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="logo">
+      <span class="logo-ball" aria-hidden="true"></span>
+      <div>
+        <h1>ITEMDEX</h1>
+        <small>GOTTA CATALOG 'EM ALL</small>
+      </div>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="scan" role="tab">SCAN</button>
+      <button class="tab" data-view="collection" role="tab">COLLECTION</button>
+    </nav>
+
+    <div class="hud">
+      <div class="hud-stat"><span>ITEMS</span><b id="stat-count">0</b></div>
+      <div class="hud-stat"><span>TOTAL VALUE</span><b id="stat-value">-</b></div>
+      <div class="hud-led" id="llm-status" title="Gemma status"><i></i><span>CONNECTING</span></div>
+      <button class="icon-btn" id="sound-toggle" title="Toggle sound">♪</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ SCAN ============ -->
+    <section class="view active" id="view-scan">
+      <div class="panel scan-input">
+        <div class="panel-head">
+          <h2 class="panel-title">1. VIEWFINDER</h2>
+          <div class="mode-toggle" role="group" aria-label="Snap mode">
+            <button class="mode active" data-mode="auto" title="Snap automatically when an item is locked">AUTO SNAP</button>
+            <button class="mode" data-mode="manual" title="Take shots yourself (multiple angles)">MANUAL</button>
+          </div>
+        </div>
+
+        <div class="viewfinder" id="dropzone">
+          <video id="camera-feed" autoplay playsinline muted></video>
+          <img id="still" alt="" hidden />
+          <canvas id="overlay"></canvas>
+          <div class="vf-frame" aria-hidden="true"></div>
+          <div class="vf-status" id="vf-status"><i></i><span>STARTING CAMERA...</span></div>
+          <div class="dropzone-idle" id="dropzone-idle" hidden>
+            <div class="pixel-arrow" aria-hidden="true">▼</div>
+            <p id="idle-text">NO CAMERA FOUND</p>
+            <small>drop a photo / video here, or use upload below</small>
+          </div>
+        </div>
+
+        <div class="control-row">
+          <button class="btn btn-accent snap-btn" id="btn-snap" title="Space">● SNAP</button>
+          <div class="frames" id="frames"></div>
+          <div class="upload-group">
+            <button class="btn btn-small" id="btn-photo" title="Upload photos">⇪ PHOTO</button>
+            <button class="btn btn-small" id="btn-video" title="Upload a video">⇪ VIDEO</button>
+            <button class="btn btn-small" id="btn-camera" hidden>◉ CAMERA</button>
+          </div>
+        </div>
+        <input type="file" id="file-photo" accept="image/*" multiple hidden />
+        <input type="file" id="file-video" accept="video/*" hidden />
+
+        <div class="field-row">
+          <label class="field">
+            <span>NOTE FOR GEMMA <em>(optional)</em></span>
+            <input id="hint" maxlength="300" placeholder="e.g. bought 2022, minor scratch" />
+          </label>
+          <label class="field">
+            <span>WHERE IS IT NOW? <em>(Gemma will guess)</em></span>
+            <input id="location" maxlength="80" placeholder="e.g. lemari kamar, rak 2" />
+          </label>
+          <button class="btn btn-primary scan-btn" id="btn-scan" disabled>▶ SCAN</button>
+        </div>
+      </div>
+
+      <div class="panel scan-output">
+        <h2 class="panel-title">2. CARD</h2>
+        <div class="card-stage" id="card-stage"></div>
+        <div class="result-actions" id="result-actions" hidden>
+          <button class="btn btn-primary" id="btn-save">★ SAVE TO DEX</button>
+          <button class="btn" id="btn-rescan">↻ RESCAN</button>
+          <button class="btn btn-danger" id="btn-discard">✕ DISCARD</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ COLLECTION ============ -->
+    <section class="view" id="view-collection">
+      <div class="toolbar panel">
+        <label class="search">
+          <span aria-hidden="true">?</span>
+          <input id="search" placeholder="SEARCH NAME, TAG, OR WHERE IT IS..." />
+        </label>
+        <select id="sort">
+          <option value="new">NEWEST</option>
+          <option value="value">VALUE ▼</option>
+          <option value="rarity">RARITY ▼</option>
+          <option value="name">NAME A-Z</option>
+          <option value="number">NO. #</option>
+        </select>
+        <div class="type-filter" id="type-filter"></div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="empty" id="empty" hidden>
+        <div class="empty-ball" aria-hidden="true"></div>
+        <p>YOUR ITEMDEX IS EMPTY</p>
+        <button class="btn btn-primary" data-goto="scan">▶ GO CATCH SOME ITEMS</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ DETAIL MODAL ============ -->
+  <div class="modal" id="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-body panel">
+      <button class="icon-btn modal-x" data-close title="Close">✕</button>
+      <div class="modal-card" id="modal-card"></div>
+      <div class="modal-info" id="modal-info"></div>
+    </div>
+  </div>
+
+  <!-- ============ RPG DIALOG ============ -->
+  <div class="dialog" id="dialog" hidden>
+    <p id="dialog-text"></p>
+    <span class="dialog-next" aria-hidden="true">▼</span>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="sound.js"></script>
+  <script src="card.js"></script>
+  <script src="media.js"></script>
+  <script src="live.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

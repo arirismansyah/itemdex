@@ -1,0 +1,419 @@
+openapi: 3.0.3
+info:
+  title: ITEMDEX API
+  version: 1.0.0
+  description: |
+    Turn photos/videos of physical items into collectible "cards" using Gemma (vision):
+    identification, estimated size/weight/condition, second-hand market value, rarity,
+    plus "last seen" location tracking.
+
+    **Flow:** `POST /scan` (analyze, nothing saved) → user reviews/edits → `POST /items` (save).
+    Optional live camera: call `POST /detect` repeatedly on small frames to draw a box.
+
+    **Images** are sent as data URLs (`data:image/jpeg;base64,...`) inside JSON.
+
+    **Auth:** only when the server runs with `ITEMDEX_API_KEY`. Send
+    `X-API-Key: <key>` or `Authorization: Bearer <key>`. `/health` and `/meta` are always public.
+    See docs/API.md for the full guide.
+servers:
+  - url: /api/v1
+    description: This server
+  - url: http://localhost:7777/api/v1
+    description: Local (npm run service)
+security:
+  - ApiKeyHeader: []
+  - BearerAuth: []
+tags:
+  - name: System
+  - name: AI
+  - name: Items
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [System]
+      summary: Service + Gemma status
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  version: { type: string, example: '1.0.0' }
+                  llm: { type: boolean, description: Gemma server reachable, example: true }
+                  model: { type: string, example: gold }
+                  items: { type: integer, example: 12 }
+  /meta:
+    get:
+      operationId: getMeta
+      tags: [System]
+      summary: Enums, limits and config for building a UI
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Meta' }
+  /detect:
+    post:
+      operationId: detectItem
+      tags: [AI]
+      summary: Live detection - find the main item in one camera frame (~0.6s)
+      description: |
+        Call in a loop (one request in flight at a time) with a ~512px JPEG frame.
+        `box` is `[ymin, xmin, ymax, xmax]` normalized to 0-1000 of the image you sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image: { type: string, description: 'data:image/jpeg;base64,...' }
+      responses:
+        '200':
+          description: Detection result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Detection' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/LlmError' }
+        '504': { $ref: '#/components/responses/LlmTimeout' }
+  /scan:
+    post:
+      operationId: scanItem
+      tags: [AI]
+      summary: Analyze 1-6 images of ONE item into card data (~5s). Not saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [images]
+              properties:
+                images:
+                  type: array
+                  minItems: 1
+                  maxItems: 6
+                  items: { type: string, description: 'data:image/jpeg;base64,... (~1024px recommended)' }
+                hint:
+                  type: string
+                  maxLength: 300
+                  description: Owner's note passed to Gemma
+                  example: bought 2022, minor scratch on back
+                source:
+                  type: string
+                  enum: [photo, video, camera]
+                  description: '"video" tells Gemma the images are frames of one clip'
+      responses:
+        '200':
+          description: Card preview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '502': { $ref: '#/components/responses/LlmError' }
+        '504': { $ref: '#/components/responses/LlmTimeout' }
+  /items:
+    get:
+      operationId: listItems
+      tags: [Items]
+      summary: List / search the collection
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: 'Search name, brand, model, tags, color, material, location place/address' }
+        - { name: type, in: query, schema: { type: string }, description: 'Comma list, e.g. ELECTRONIC,TOY' }
+        - { name: rarity, in: query, schema: { type: string }, description: 'Comma list, e.g. RARE,EPIC' }
+        - { name: sort, in: query, schema: { type: string, enum: [new, old, value, rarity, name, number], default: new } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 500 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Item' } }
+                  total: { type: integer, description: Matches before limit/offset }
+                  total_value: { type: integer, description: Sum of value.typical of all matches }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      operationId: createItem
+      tags: [Items]
+      summary: Save a card to the collection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card]
+              properties:
+                card: { $ref: '#/components/schemas/Card' }
+                image: { type: string, description: 'Cover image data URL (usually images[best_frame])' }
+                source: { type: string, enum: [photo, video, camera] }
+                location: { $ref: '#/components/schemas/LocationInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /items/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getItem
+      tags: [Items]
+      summary: Get one item
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateItem
+      tags: [Items]
+      summary: Edit card fields (partial; nested objects are merged). PUT is an alias.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card]
+              properties:
+                card:
+                  type: object
+                  description: Any subset of Card fields
+                  example: { name: My Laptop, rarity: EPIC, value: { typical: 9000000 } }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteItem
+      tags: [Items]
+      summary: Delete an item and its image
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /items/{id}/location:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: updateItemLocation
+      tags: [Items]
+      summary: Record where the item is now ("last seen"); keeps the last 20 moves
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocationInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    ApiKeyHeader: { type: apiKey, in: header, name: X-API-Key }
+    BearerAuth: { type: http, scheme: bearer }
+  responses:
+    BadRequest:
+      description: Invalid input
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Missing or invalid API key
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    TooLarge:
+      description: Request body over 60MB
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    LlmError:
+      description: Gemma server error or unreachable
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    LlmTimeout:
+      description: Gemma did not answer in time
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: Item not found }
+        code:
+          type: string
+          enum: [bad_request, unauthorized, not_found, payload_too_large, llm_error, llm_timeout, internal]
+    Meta:
+      type: object
+      properties:
+        version: { type: string }
+        model: { type: string }
+        currency: { type: string, example: IDR }
+        language: { type: string, example: Indonesian }
+        market: { type: string, example: Indonesian }
+        auth_required: { type: boolean }
+        enums:
+          type: object
+          properties:
+            type: { type: array, items: { type: string } }
+            rarity: { type: array, items: { type: string } }
+            condition: { type: array, items: { type: string } }
+            size_class: { type: array, items: { type: string } }
+            source: { type: array, items: { type: string } }
+        limits:
+          type: object
+          properties:
+            max_images_per_scan: { type: integer, example: 6 }
+            max_body_mb: { type: integer, example: 60 }
+            recommended_scan_image_side_px: { type: integer, example: 1024 }
+            recommended_detect_image_side_px: { type: integer, example: 512 }
+    Detection:
+      type: object
+      properties:
+        has_item: { type: boolean, example: true }
+        name: { type: string, example: laptop }
+        box:
+          type: array
+          nullable: true
+          minItems: 4
+          maxItems: 4
+          items: { type: integer, minimum: 0, maximum: 1000 }
+          description: '[ymin, xmin, ymax, xmax], 0-1000'
+          example: [456, 526, 748, 886]
+        elapsed_ms: { type: integer, example: 640 }
+    ScanResult:
+      type: object
+      properties:
+        card: { $ref: '#/components/schemas/Card' }
+        best_frame: { type: integer, description: 'Index in images[] that shows the item best', example: 0 }
+        elapsed_ms: { type: integer, example: 4700 }
+    Card:
+      type: object
+      description: AI-generated card data. Text fields are in CARD_LANGUAGE, money in CURRENCY.
+      properties:
+        is_item: { type: boolean, description: false if Gemma found no physical item }
+        name: { type: string, maxLength: 40, example: MacBook 12-inch Gold }
+        brand: { type: string, example: Apple }
+        model: { type: string, example: 'MacBook (Retina, 12-inch)' }
+        type:
+          type: string
+          enum: [ELECTRONIC, FASHION, BOOK, TOY, HOME, KITCHEN, SPORT, TOOL, COLLECTIBLE, BEAUTY, VEHICLE, MUSIC, OFFICE, OTHER]
+        subcategory: { type: string, example: Laptop }
+        description: { type: string, description: Pokedex-style flavor text }
+        color: { type: string }
+        material: { type: string }
+        dimensions:
+          type: object
+          properties:
+            length_cm: { type: number, example: 28.1 }
+            width_cm: { type: number, example: 19.6 }
+            height_cm: { type: number, example: 1.3 }
+        size_class:
+          type: string
+          enum: [TINY, SMALL, MEDIUM, LARGE, HUGE]
+          description: Derived from the longest dimension (<8, <25, <70, <150 cm, else HUGE)
+        weight_g: { type: integer, example: 1080 }
+        condition:
+          type: object
+          properties:
+            score: { type: integer, minimum: 0, maximum: 100, description: Shown as HP on the card }
+            label: { type: string, enum: [MINT, EXCELLENT, GOOD, FAIR, POOR] }
+            notes: { type: string }
+        value:
+          type: object
+          description: Second-hand resale estimate (AI, not a quote)
+          properties:
+            min: { type: integer, example: 4000000 }
+            max: { type: integer, example: 7000000 }
+            typical: { type: integer, example: 5500000 }
+            new_price: { type: integer, example: 15000000 }
+            confidence: { type: string, enum: [LOW, MEDIUM, HIGH] }
+            reasoning: { type: string }
+        rarity: { type: string, enum: [COMMON, UNCOMMON, RARE, EPIC, LEGENDARY] }
+        abilities:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: object
+            properties:
+              name: { type: string, example: Retina Vision }
+              power: { type: integer, example: 85 }
+              text: { type: string }
+        tags: { type: array, maxItems: 6, items: { type: string } }
+        location_guess: { type: string, description: 'Where the item seems to be, from the photo background', example: meja kerja }
+    Item:
+      allOf:
+        - $ref: '#/components/schemas/Card'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            number: { type: integer, description: Collection number (NO.001), example: 1 }
+            image: { type: string, nullable: true, description: Stored file name }
+            image_url: { type: string, nullable: true, description: 'Absolute URL of the cover image (public, no auth)' }
+            source: { type: string, enum: [photo, video, camera] }
+            location: { $ref: '#/components/schemas/Location' }
+            location_history: { type: array, items: { $ref: '#/components/schemas/Location' }, description: 'Newest first, max 20' }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    LocationInput:
+      type: object
+      description: Provide place and/or lat+lng
+      properties:
+        place: { type: string, maxLength: 80, example: 'lemari kamar, rak 2' }
+        lat: { type: number, example: -6.2297 }
+        lng: { type: number, example: 106.8295 }
+        accuracy_m: { type: number, example: 25 }
+        source: { type: string, enum: [exif, device], description: Where the coordinates came from }
+    Location:
+      type: object
+      nullable: true
+      properties:
+        place: { type: string }
+        lat: { type: number, nullable: true }
+        lng: { type: number, nullable: true }
+        accuracy_m: { type: integer, nullable: true }
+        source: { type: string, enum: [exif, device, manual] }
+        address: { type: string, description: Reverse-geocoded street address (may be empty) }
+        at: { type: string, format: date-time }

@@ -1,0 +1,62 @@
+{
+  "name": "@itemdex/desktop",
+  "productName": "ITEMDEX",
+  "version": "0.2.0",
+  "private": true,
+  "description": "ITEMDEX desktop app",
+  "author": "ITEMDEX",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "tsup && node scripts/copy-web.mjs",
+    "start": "node scripts/start.mjs",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:dir": "npm run build && electron-builder --dir --publish never"
+  },
+  "devDependencies": {
+    "@itemdex/server": "*",
+    "@itemdex/shared": "*",
+    "dotenv": "^17.2.3",
+    "electron": "44.7.0",
+    "electron-builder": "^26.15.3",
+    "tsup": "^8.5.0"
+  },
+  "build": {
+    "appId": "app.itemdex.desktop",
+    "productName": "ITEMDEX",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.lifestyle",
+      "target": [
+        "dmg"
+      ],
+      "identity": null,
+      "extendInfo": {
+        "NSCameraUsageDescription": "ITEMDEX uses the camera to scan your items.",
+        "NSLocationWhenInUseUsageDescription": "ITEMDEX records where an item was last seen."
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+**/release
+archive
+ui
+service
+desktop
+data
+.env
+.git
