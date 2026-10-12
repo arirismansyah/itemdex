@@ -94,6 +94,63 @@ const MIGRATIONS: { id: string; sql: string }[] = [
       END $$;
     `,
   },
+  {
+    id: '002_households_lifecycle',
+    sql: `
+      -- Accounts are optional (ACCOUNTS=true); without them everything lives in the default household.
+      CREATE TABLE IF NOT EXISTS households (
+        id          uuid PRIMARY KEY,
+        name        text NOT NULL,
+        invite_code text NOT NULL UNIQUE,
+        created_at  timestamptz NOT NULL DEFAULT now()
+      );
+      INSERT INTO households (id, name, invite_code)
+        VALUES ('00000000-0000-0000-0000-000000000001', 'My household', 'default')
+        ON CONFLICT DO NOTHING;
+
+      CREATE TABLE IF NOT EXISTS users (
+        id           uuid PRIMARY KEY,
+        email        text NOT NULL UNIQUE,
+        name         text NOT NULL DEFAULT '',
+        pass_hash    text NOT NULL,
+        household_id uuid NOT NULL REFERENCES households(id),
+        created_at   timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        token_hash text PRIMARY KEY,
+        user_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at timestamptz NOT NULL
+      );
+
+      ALTER TABLE items
+        ADD COLUMN IF NOT EXISTS household_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES households(id),
+        ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT '', -- '' = the service currency
+        ADD COLUMN IF NOT EXISTS lent jsonb,
+        ADD COLUMN IF NOT EXISTS purchase jsonb,
+        ADD COLUMN IF NOT EXISTS comps jsonb;
+      CREATE INDEX IF NOT EXISTS items_household_idx ON items (household_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS item_value_history (
+        id      bigserial PRIMARY KEY,
+        item_id uuid NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        typical bigint NOT NULL,
+        at      timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS item_value_history_idx ON item_value_history (item_id, at, id);
+      INSERT INTO item_value_history (item_id, typical, at) SELECT id, value_typical, created_at FROM items;
+    `,
+  },
+  {
+    id: '003_settings',
+    sql: `
+      -- Settings changed from the app (AI server URL / key / model); they override the environment.
+      CREATE TABLE IF NOT EXISTS settings (
+        key   text PRIMARY KEY,
+        value jsonb NOT NULL
+      );
+    `,
+  },
 ];
 
 const LOCK_ID = 7_210_001; // advisory lock so parallel instances don't migrate twice

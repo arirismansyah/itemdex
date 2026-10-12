@@ -9,7 +9,7 @@ import path from 'node:path';
 import { normalizeCard, SOURCES, type ItemLocation, type Source } from '@itemdex/shared';
 import { loadConfig } from '../src/config.js';
 import { createPool, migrate } from '../src/db.js';
-import { ItemsRepo, type ImageBlob } from '../src/repo.js';
+import { DEFAULT_HOUSEHOLD, ItemsRepo, type ImageBlob } from '../src/repo.js';
 
 function defaultDir() {
   const home = os.homedir();
@@ -28,7 +28,7 @@ if (!fs.existsSync(file)) {
 const { items = [] } = JSON.parse(fs.readFileSync(file, 'utf8'));
 const config = loadConfig();
 const db = createPool(config.databaseUrl, 2);
-const repo = new ItemsRepo(db);
+const repo = new ItemsRepo(db, config.currency);
 
 const MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
 
@@ -51,7 +51,7 @@ try {
     }
     const history: ItemLocation[] = (it.location_history || []).map((h: ItemLocation) => ({ ...h }));
     const { at: _at, ...location } = it.location || {};
-    await repo.create(normalizeCard(it), {
+    await repo.create(DEFAULT_HOUSEHOLD, normalizeCard(it), {
       id: it.id,
       createdAt: it.created_at,
       source: (SOURCES as readonly string[]).includes(it.source) ? (it.source as Source) : 'photo',

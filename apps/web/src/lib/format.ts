@@ -23,14 +23,14 @@ let currency = 'IDR';
 const formatters = new Map<string, Intl.NumberFormat>();
 export const setCurrency = (c?: string) => { currency = c || 'IDR'; };
 
-export function money(n: number, { compact = true } = {}): string {
+export function money(n: number, { compact = true, currency: cur = currency } = {}): string {
   if (!n) return '-';
-  const key = `${currency}|${compact}`;
+  const key = `${cur}|${compact}`;
   let f = formatters.get(key);
   if (!f) {
-    f = new Intl.NumberFormat(currency === 'IDR' ? 'id-ID' : 'en-US', {
+    f = new Intl.NumberFormat(cur === 'IDR' ? 'id-ID' : 'en-US', {
       style: 'currency',
-      currency,
+      currency: cur,
       notation: compact ? 'compact' : 'standard',
       maximumFractionDigits: compact ? 1 : 0,
     });

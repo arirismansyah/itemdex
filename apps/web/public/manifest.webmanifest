@@ -1,7 +1,7 @@
 {
   "name": "ITEMDEX",
   "short_name": "ITEMDEX",
-  "description": "Catalog your stuff as retro collectible cards, powered by Gemma.",
+  "description": "Catalog your stuff as retro collectible cards, powered by AI.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0b1e",

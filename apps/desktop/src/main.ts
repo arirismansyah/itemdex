@@ -23,7 +23,7 @@ const CONFIG_TEMPLATE = `# ITEMDEX desktop configuration. Restart the app after 
 # PostgreSQL connection, e.g. postgres://postgres:PASSWORD@localhost:5432/itemdex-ai-builder
 DATABASE_URL=
 
-# Gemma (vLLM, OpenAI-compatible)
+# AI model: any OpenAI-compatible vision server (can also be set in the app, gear icon)
 LLM_API_BASE=
 LLM_API_KEY=
 LLM_MODEL=
@@ -89,6 +89,7 @@ async function startLocal(): Promise<string | null> {
     loadEnv();
     const config = loadConfig({
       host: '127.0.0.1',
+      shopee: { state: path.join(app.getPath('userData'), 'shopee-state.json'), discount: Number(process.env.COMPS_DISCOUNT) || 0.9, canLogin: true },
       port: 0, // random free port
       apiKey: '', // local only: no API key / CORS regardless of env (those are for hosted mode)
       corsOrigins: [],

@@ -1,8 +1,9 @@
 // COLLECTION tab: server-side search/filter/sort with infinite scroll.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { TYPES, type Item, type ItemType, type Sort } from '@itemdex/shared';
-import { useItems, useStats } from '../lib/api';
+import { FLAGS, TYPES, type AskFilters, type Flag, type Item, type ItemType, type Sort } from '@itemdex/shared';
+import { ask as askApi, downloadReport, useItems, useStats, type ItemFilters } from '../lib/api';
+import { say } from '../lib/dialog';
 import { TYPE_META } from '../lib/format';
 import { Sound } from '../lib/sound';
 import { TradingCard } from './TradingCard';
@@ -16,6 +17,8 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+const FLAG_LABEL: Record<Flag, string> = { lent: 'LENT OUT', overdue: 'OVERDUE', sell_now: 'SELL NOW', warranty: 'WARRANTY ≤60D' };
+
 export function CollectionView({ active, onOpen, onGoScan }: {
   active: boolean;
   onOpen: (item: Item) => void;
@@ -24,9 +27,33 @@ export function CollectionView({ active, onOpen, onGoScan }: {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<Sort>('new');
   const [type, setType] = useState<'ALL' | ItemType>('ALL');
+  const [flag, setFlag] = useState<Flag | ''>('');
+  const [asked, setAsked] = useState<{ text: string; f: AskFilters } | null>(null);
+  const [asking, setAsking] = useState(false);
   const q = useDebounced(search.trim(), 250);
   const stats = useStats();
-  const filters = useMemo(() => ({ q, sort, type }), [q, sort, type]);
+  const filters = useMemo<ItemFilters>(() => asked
+    ? {
+      q: asked.f.q, type: asked.f.types.join(',') || 'ALL', rarity: asked.f.rarities.join(','),
+      sort: asked.f.sort, min: asked.f.min_value, max: asked.f.max_value, flag: asked.f.flag,
+    }
+    : { q, sort, type, rarity: '', min: 0, max: 0, flag },
+  [q, sort, type, flag, asked]);
+
+  const runAsk = async () => {
+    const text = search.trim();
+    if (!text) return;
+    setAsking(true);
+    try {
+      setAsked({ text, f: await askApi(text) });
+      Sound.play('select');
+    } catch (err) {
+      say(`Ask failed: ${(err as Error).message}`, { sound: 'error' });
+    } finally {
+      setAsking(false);
+    }
+  };
+  const report = (format: 'csv' | 'html') => downloadReport(format).catch((err) => say((err as Error).message, { sound: 'error' }));
   const items = useItems(filters, active);
   const sentinel = useRef<HTMLDivElement>(null);
 
@@ -63,8 +90,12 @@ export function CollectionView({ active, onOpen, onGoScan }: {
             placeholder="SEARCH NAME, TAG, OR WHERE IT IS..."
             aria-label="Search"
             type="search"
+            onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) void runAsk(); }}
           />
         </label>
+        <button className="btn btn-small" onClick={runAsk} disabled={asking || !search.trim()} title="Ask in plain words, e.g. 'what in the garage is worth over 50k?' (Shift+Enter)">
+          {asking ? '...' : '✦ ASK'}
+        </button>
         <select value={sort} onChange={(e) => { Sound.play('click'); setSort(e.target.value as Sort); }} aria-label="Sort">
           <option value="new">NEWEST</option>
           <option value="value">VALUE ▼</option>
@@ -72,7 +103,7 @@ export function CollectionView({ active, onOpen, onGoScan }: {
           <option value="name">NAME A-Z</option>
           <option value="number">NO. #</option>
         </select>
-        <div className="type-filter">
+        <div className="type-filter" hidden={!!asked}>
           {(['ALL', ...presentTypes] as const).map((t) => (
             <button
               key={t}
@@ -84,7 +115,26 @@ export function CollectionView({ active, onOpen, onGoScan }: {
             </button>
           ))}
         </div>
+        <div className="type-filter" hidden={!!asked}>
+          {FLAGS.filter((f) => stats.data?.flags[f] || f === flag).map((f) => (
+            <button key={f} className={`chip flag-${f}${f === flag ? ' active' : ''}`} onClick={() => { Sound.play('click'); setFlag(f === flag ? '' : f); }}>
+              {FLAG_LABEL[f]}<small>{stats.data?.flags[f] ?? 0}</small>
+            </button>
+          ))}
+        </div>
+        <div className="report-btns">
+          <button className="btn btn-small" onClick={() => report('csv')} title="Spreadsheet of every item (insurance, moving)">⇩ CSV</button>
+          <button className="btn btn-small" onClick={() => report('html')} title="Printable report: save as PDF">⎙ REPORT</button>
+        </div>
       </div>
+
+      {asked && (
+        <div className="ask-banner panel">
+          <span>✦ ASK: “{asked.text}”</span>
+          <b>{matched} MATCH{matched === 1 ? '' : 'ES'}</b>
+          <button className="btn btn-small" onClick={() => { Sound.play('click'); setAsked(null); }}>✕ CLEAR</button>
+        </div>
+      )}
 
       {stats.data && total === 0 ? (
         <div className="empty">

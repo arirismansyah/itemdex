@@ -1,8 +1,8 @@
-// Live viewfinder: camera + Gemma object detection + auto-snap.
+// Live viewfinder: camera + AI object detection + auto-snap.
 //
 // - Motion: every 120ms the frame is shrunk to 32x24 grayscale and diffed with
 //   the previous one; low diff = camera/item is steady.
-// - Detect: one frame at a time goes to /api/v1/detect (~0.6s on Gemma).
+// - Detect: one frame at a time goes to /api/v1/detect (~0.6s on a fast model).
 // - Lock: same item twice in a row + steady for LOCK_MS => auto-snap.
 // - After a snap the trigger is disarmed until the scene changes.
 // - Everything stops while the page is hidden (saves battery on phones).

@@ -4,10 +4,11 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { RARITIES, TYPES, type Item } from '@itemdex/shared';
 import { useDeleteItem, useItem, useMoveItem, useUpdateItem } from '../lib/api';
 import { say } from '../lib/dialog';
-import { ago, date, dims, mapUrl, money, pad, placeLabel, weight } from '../lib/format';
+import { ago, date, dims, mapUrl, pad, placeLabel, weight } from '../lib/format';
 import { deviceLocation } from '../lib/media';
 import { exportPng } from '../lib/platform';
 import { Sound } from '../lib/sound';
+import { LendBlock, ListingBlock, PurchaseBlock, ValueBlock } from './ItemExtras';
 import { TradingCard } from './TradingCard';
 
 function LocationBlock({ item }: { item: Item }) {
@@ -177,7 +178,6 @@ export function DetailModal({ initial, onClose }: { initial: Item; onClose: () =
     }
   };
 
-  const v = item.value;
   const row = (k: string, val: string | number | undefined) => (val ? <tr><th>{k}</th><td>{val}</td></tr> : null);
 
   return (
@@ -192,15 +192,11 @@ export function DetailModal({ initial, onClose }: { initial: Item; onClose: () =
           {editing ? <EditForm item={item} onDone={() => setEditing(false)} /> : (
             <>
               <h2>NO.{pad(item.number)} {item.name}</h2>
-              <section className="info-sec value-sec">
-                <h4>MARKET VALUE <em>(AI ESTIMATE · {v.confidence} CONFIDENCE)</em></h4>
-                <p className="big-value">{money(v.typical, { compact: false })}</p>
-                <p className="range">
-                  RANGE {money(v.min)} – {money(v.max)}{v.new_price ? ` · NEW ${money(v.new_price)}` : ''}
-                </p>
-                {v.reasoning && <p className="muted">{v.reasoning}</p>}
-              </section>
+              <ValueBlock item={item} />
               <LocationBlock item={item} />
+              <LendBlock item={item} />
+              <PurchaseBlock item={item} />
+              <ListingBlock item={item} />
               <section className="info-sec">
                 <h4>DATA</h4>
                 <table className="data">

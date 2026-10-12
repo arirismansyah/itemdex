@@ -3,7 +3,7 @@ info:
   title: ITEMDEX API
   version: 2.0.0
   description: |
-    Turn photos/videos of physical items into collectible "cards" using Gemma (vision):
+    Turn photos/videos of physical items into collectible "cards" using an AI vision model (Claude, DeepSeek, Gemini, OpenAI, Ollama or any OpenAI-compatible server; set in the app or with LLM_*):
     identification, estimated size/weight/condition, second-hand market value, rarity,
     plus "last seen" location tracking.
 
@@ -15,6 +15,8 @@ info:
 
     **Auth:** only when the server runs with `ITEMDEX_API_KEY`. Send
     `X-API-Key: <key>` or `Authorization: Bearer <key>`. `/health` and `/meta` are always public.
+    With `ACCOUNTS=true` the API key is replaced by sign-in: `POST /auth/login` returns a token,
+    sent as `Authorization: Bearer <token>`; every account belongs to a household that shares one collection.
     See docs/API.md for the full guide.
 servers:
   - url: /api/v1
@@ -28,12 +30,15 @@ tags:
   - name: System
   - name: AI
   - name: Items
+  - name: Lifecycle
+  - name: Settings
+  - name: Accounts
 paths:
   /health:
     get:
       operationId: getHealth
       tags: [System]
-      summary: Service + Gemma status
+      summary: Service + AI status
       security: []
       responses:
         '200':
@@ -45,7 +50,7 @@ paths:
                 properties:
                   ok: { type: boolean, example: true }
                   version: { type: string, example: '2.0.0' }
-                  llm: { type: boolean, description: Gemma server reachable, example: true }
+                  llm: { type: boolean, description: AI server reachable, example: true }
                   db: { type: boolean, description: PostgreSQL reachable (ok = db), example: true }
                   model: { type: string, example: gold }
                   items: { type: integer, example: 12 }
@@ -110,12 +115,13 @@ paths:
                 hint:
                   type: string
                   maxLength: 300
-                  description: Owner's note passed to Gemma
+                  description: Owner's note passed to the AI
                   example: bought 2022, minor scratch on back
                 source:
                   type: string
                   enum: [photo, video, camera]
-                  description: '"video" tells Gemma the images are frames of one clip'
+                  description: '"video" tells the AI the images are frames of one clip'
+                locale: { $ref: '#/components/schemas/Locale' }
       responses:
         '200':
           description: Card preview
@@ -150,6 +156,9 @@ paths:
         - { name: type, in: query, schema: { type: string }, description: 'Comma list, e.g. ELECTRONIC,TOY' }
         - { name: rarity, in: query, schema: { type: string }, description: 'Comma list, e.g. RARE,EPIC' }
         - { name: sort, in: query, schema: { type: string, enum: [new, old, value, rarity, name, number], default: new } }
+        - { name: min_value, in: query, schema: { type: integer }, description: 'value.typical >= this' }
+        - { name: max_value, in: query, schema: { type: integer }, description: 'value.typical <= this' }
+        - { name: flag, in: query, schema: { type: string, enum: [lent, overdue, sell_now, warranty] }, description: 'lent out / lent past due / at its peak price / warranty ends within 60 days' }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 60 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
@@ -182,6 +191,7 @@ paths:
                 image: { type: string, description: 'Cover image data URL (usually images[best_frame]), max 8MB' }
                 thumb: { type: string, description: 'Optional small version (~360px) for grids; defaults to image' }
                 source: { type: string, enum: [photo, video, camera] }
+                currency: { type: string, example: USD, description: 'ISO code the card values are in (use ScanResult.currency); default = service currency' }
                 location: { $ref: '#/components/schemas/LocationInput' }
       responses:
         '201':
@@ -272,6 +282,393 @@ paths:
                   item: { $ref: '#/components/schemas/Item' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /scan/room:
+    post:
+      operationId: scanRoom
+      tags: [AI]
+      summary: One photo of a room/shelf/drawer -> a card per visible item (max 12). Not saved.
+      description: Each result has a `box` ([ymin, xmin, ymax, xmax], 0-1000) to crop the item; save each with POST /items.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image: { type: string, description: 'data:image/jpeg;base64,...' }
+                hint: { type: string, maxLength: 300 }
+                locale: { $ref: '#/components/schemas/Locale' }
+      responses:
+        '200':
+          description: Cards
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        card: { $ref: '#/components/schemas/Card' }
+                        box: { type: array, nullable: true, items: { type: integer }, minItems: 4, maxItems: 4 }
+                  currency: { type: string }
+                  elapsed_ms: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '502': { $ref: '#/components/responses/LlmError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/LlmTimeout' }
+  /ask:
+    post:
+      operationId: askCollection
+      tags: [AI]
+      summary: Plain-words question -> filters for GET /items
+      description: 'Example: "tools in the garage worth over 50k". Returns q, types, rarities, min_value, max_value, sort and flag; pass them to GET /items.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string, maxLength: 200 }
+                locale: { $ref: '#/components/schemas/Locale' }
+      responses:
+        '200':
+          description: Filters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filters:
+                    type: object
+                    properties:
+                      q: { type: string }
+                      types: { type: array, items: { type: string } }
+                      rarities: { type: array, items: { type: string } }
+                      min_value: { type: integer }
+                      max_value: { type: integer }
+                      sort: { type: string }
+                      flag: { type: string, enum: ['', lent, overdue, sell_now, warranty] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '502': { $ref: '#/components/responses/LlmError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /report:
+    get:
+      operationId: inventoryReport
+      tags: [Lifecycle]
+      summary: Inventory for insurance / moving
+      description: '`format=csv` (default) downloads a spreadsheet; `format=html` is a printable page (print to PDF). Totals are listed per currency.'
+      parameters:
+        - { name: format, in: query, schema: { type: string, enum: [csv, html], default: csv } }
+      responses:
+        '200':
+          description: The report
+          content:
+            text/csv: { schema: { type: string } }
+            text/html: { schema: { type: string } }
+  /items/{id}/lend:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: lendItem
+      tags: [Lifecycle]
+      summary: Mark the item as lent out
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { type: string, maxLength: 80, example: Budi }
+                due: { type: string, format: date, nullable: true, description: Return date YYYY-MM-DD }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: returnItem
+      tags: [Lifecycle]
+      summary: The item is back
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /items/{id}/purchase:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: setPurchase
+      tags: [Lifecycle]
+      summary: Store, date, price and warranty; warranty_until is computed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                store: { type: string }
+                date: { type: string, format: date }
+                price: { type: integer }
+                warranty_months: { type: integer }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /items/{id}/receipt:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: readReceipt
+      tags: [Lifecycle, AI]
+      summary: Read a receipt photo and save it as the item's purchase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image: { type: string, description: 'data:image/jpeg;base64,...' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '422': { description: 'Not a receipt (code not_a_receipt)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/LlmError' }
+  /items/{id}/listing:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: writeListing
+      tags: [Lifecycle, AI]
+      summary: Sale listing text for a marketplace
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                platform: { type: string, enum: [generic, tokopedia, facebook, ebay], default: generic }
+                locale: { $ref: '#/components/schemas/Locale' }
+      responses:
+        '200':
+          description: Listing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listing:
+                    type: object
+                    properties:
+                      title: { type: string }
+                      description: { type: string }
+                      price: { type: integer }
+                      currency: { type: string }
+                      platform: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/LlmError' }
+  /items/{id}/comps:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: checkPrice
+      tags: [Lifecycle]
+      summary: Check the value against Shopee listings (needs a connected Shopee session, IDR items only)
+      description: With 3+ matching listings the value is set to the 25th/50th/75th percentile of their prices (lowered by COMPS_DISCOUNT). Otherwise the AI estimate stays. Takes about 15 seconds.
+      responses:
+        '200':
+          description: Updated (see `comps`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '409': { description: 'Shopee not connected (code not_connected)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { description: 'Browser or Shopee problem (code comps_error)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /shopee:
+    get:
+      operationId: shopeeStatus
+      tags: [Settings]
+      summary: Is a Shopee session saved?
+      responses:
+        '200':
+          description: Status
+          content: { application/json: { schema: { $ref: '#/components/schemas/ShopeeStatus' } } }
+    delete:
+      operationId: shopeeDisconnect
+      tags: [Settings]
+      summary: Delete the saved Shopee session
+      responses:
+        '200':
+          description: Status
+          content: { application/json: { schema: { $ref: '#/components/schemas/ShopeeStatus' } } }
+  /shopee/login:
+    post:
+      operationId: shopeeLogin
+      tags: [Settings]
+      summary: Open a browser window on the service machine so the user can log in to Shopee
+      description: Local only (HOST=127.0.0.1). Poll GET /shopee until state is done. Only the browser session is saved, never the password.
+      responses:
+        '200':
+          description: Status (state waiting)
+          content: { application/json: { schema: { $ref: '#/components/schemas/ShopeeStatus' } } }
+        '403': { description: 'Service is not running locally (code remote)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /settings/ai:
+    get:
+      operationId: getAiSettings
+      tags: [Settings]
+      summary: Current AI server URL and model (the key is never returned)
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AiConfig' } } }
+    put:
+      operationId: setAiSettings
+      tags: [Settings]
+      summary: Point the service at a vision model (Claude, DeepSeek, Gemini, OpenAI, Ollama, vLLM, ...). Takes effect immediately
+      description: A URL with only a host gets /v1 added, a URL with a path is used as is (Gemini is https://generativelanguage.googleapis.com/v1beta/openai). Claude subscriptions cannot be used, only API keys. Saved in the database and overrides LLM_API_BASE / LLM_API_KEY / LLM_MODEL. Omit `api_key` to keep the saved one. With accounts, only the first account may call this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_url, model]
+              properties:
+                base_url: { type: string, example: 'https://your-ai-server/v1' }
+                model: { type: string }
+                api_key: { type: string }
+                clear_key: { type: boolean }
+      responses:
+        '200':
+          description: Saved
+          content: { application/json: { schema: { $ref: '#/components/schemas/AiConfig' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: 'Not the first account (code forbidden)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /settings/ai/test:
+    post:
+      operationId: testAiSettings
+      tags: [Settings]
+      summary: Try a URL/key/model without saving; lists the models and checks that the model accepts an image
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                base_url: { type: string }
+                model: { type: string }
+                api_key: { type: string }
+      responses:
+        '200':
+          description: Always 200; read `ok` and `message`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+                  models: { type: array, items: { type: string } }
+        '403': { description: 'Not the first account (code forbidden)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /auth/register:
+    post:
+      operationId: register
+      tags: [Accounts]
+      summary: Create an account (only with ACCOUNTS=true)
+      security: []
+      description: Without `invite_code` a new household is created; with one, the user joins that household and sees its collection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string, minLength: 8 }
+                name: { type: string }
+                invite_code: { type: string }
+      responses:
+        '201':
+          description: Signed in
+          content: { application/json: { schema: { $ref: '#/components/schemas/Session' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: 'Email already registered', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /auth/login:
+    post:
+      operationId: login
+      tags: [Accounts]
+      summary: Sign in; the token lasts 30 days
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Signed in
+          content: { application/json: { schema: { $ref: '#/components/schemas/Session' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/me:
+    get:
+      operationId: me
+      tags: [Accounts]
+      summary: Current user and household (name, invite_code, members)
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [Accounts]
+      summary: End the session
+      responses:
+        '200': { description: OK }
 components:
   securitySchemes:
     ApiKeyHeader: { type: apiKey, in: header, name: X-API-Key }
@@ -290,13 +687,13 @@ components:
       description: Request body over BODY_LIMIT_MB (default 40MB)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     LlmError:
-      description: Gemma server returned an error
+      description: AI server returned an error
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     LlmTimeout:
-      description: Gemma did not answer in time
+      description: AI did not answer in time
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Unavailable:
-      description: Gemma unreachable / not configured (llm_unavailable), or database down (db_unavailable)
+      description: AI server unreachable / not configured (llm_unavailable), or database down (db_unavailable)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
     Error:
@@ -305,7 +702,7 @@ components:
         error: { type: string, example: Item not found }
         code:
           type: string
-          enum: [bad_request, unauthorized, not_found, payload_too_large, llm_error, llm_unavailable, llm_timeout, db_unavailable, internal]
+          enum: [bad_request, unauthorized, forbidden, not_found, payload_too_large, llm_error, llm_unavailable, llm_timeout, db_unavailable, not_a_receipt, not_connected, no_comps, comps_error, browser_error, remote, auth_error, internal]
     Meta:
       type: object
       properties:
@@ -315,6 +712,7 @@ components:
         language: { type: string, example: Indonesian }
         market: { type: string, example: Indonesian }
         auth_required: { type: boolean }
+        accounts: { type: boolean, description: 'Sign-in required (ACCOUNTS=true)' }
         enums:
           type: object
           properties:
@@ -341,6 +739,14 @@ components:
           type: object
           additionalProperties: { type: integer }
           example: { ELECTRONIC: 12, TOY: 3 }
+        flags:
+          type: object
+          description: Counts for the lifecycle filters (GET /items?flag=)
+          properties:
+            lent: { type: integer }
+            overdue: { type: integer }
+            sell_now: { type: integer }
+            warranty: { type: integer }
     Detection:
       type: object
       properties:
@@ -360,12 +766,20 @@ components:
       properties:
         card: { $ref: '#/components/schemas/Card' }
         best_frame: { type: integer, description: 'Index in images[] that shows the item best', example: 0 }
+        currency: { type: string, example: IDR, description: Currency of the card values }
         elapsed_ms: { type: integer, example: 4700 }
+    Locale:
+      type: object
+      description: Per-request override of the card language, currency and resale market (defaults come from CARD_LANGUAGE, CURRENCY, MARKET)
+      properties:
+        language: { type: string, example: English }
+        currency: { type: string, example: USD }
+        market: { type: string, example: US }
     Card:
       type: object
       description: AI-generated card data. Text fields are in CARD_LANGUAGE, money in CURRENCY.
       properties:
-        is_item: { type: boolean, description: false if Gemma found no physical item }
+        is_item: { type: boolean, description: false if the AI found no physical item }
         name: { type: string, maxLength: 40, example: MacBook 12-inch Gold }
         brand: { type: string, example: Apple }
         model: { type: string, example: 'MacBook (Retina, 12-inch)' }
@@ -426,10 +840,81 @@ components:
             image_url: { type: string, nullable: true, description: 'Absolute URL of the full cover image (public, no auth)' }
             thumb_url: { type: string, nullable: true, description: 'Absolute URL of the thumbnail for grids (public, no auth)' }
             source: { type: string, enum: [photo, video, camera] }
+            currency: { type: string, example: IDR, description: Currency of value.* }
+            lent:
+              type: object
+              nullable: true
+              properties:
+                to: { type: string }
+                at: { type: string, format: date-time }
+                due: { type: string, format: date, nullable: true }
+            purchase: { $ref: '#/components/schemas/Purchase' }
+            comps: { $ref: '#/components/schemas/Comps' }
+            value_history:
+              type: array
+              description: 'Price points, oldest first (only in GET /items/{id}); a point is added whenever value.typical changes'
+              items:
+                type: object
+                properties:
+                  typical: { type: integer }
+                  at: { type: string, format: date-time }
+            sell_now: { type: boolean, description: 'value.typical is the all-time high and 10%+ above the first recorded value' }
             location: { $ref: '#/components/schemas/Location' }
             location_history: { type: array, items: { $ref: '#/components/schemas/Location' }, description: 'Newest first, max 20. Empty in list responses; use GET /items/{id}.' }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
+    Purchase:
+      type: object
+      nullable: true
+      properties:
+        store: { type: string }
+        date: { type: string, format: date, nullable: true }
+        price: { type: integer }
+        warranty_months: { type: integer }
+        warranty_until: { type: string, format: date, nullable: true }
+    Comps:
+      type: object
+      nullable: true
+      description: Last Shopee price check
+      properties:
+        query: { type: string }
+        engine: { type: string, example: shopee }
+        n: { type: integer, description: Listings used }
+        median: { type: integer }
+        low: { type: integer, description: 25th percentile }
+        high: { type: integer, description: 75th percentile }
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              title: { type: string }
+              price: { type: integer }
+              url: { type: string }
+              site: { type: string }
+        at: { type: string, format: date-time }
+    AiConfig:
+      type: object
+      properties:
+        base_url: { type: string, example: 'https://your-ai-server' }
+        model: { type: string }
+        provider: { type: string, enum: [openai, anthropic], description: 'Detected from the URL: api.anthropic.com uses the native Claude API, everything else is OpenAI-compatible' }
+        has_key: { type: boolean, description: The key itself is never returned }
+        source: { type: string, enum: [app, env, none], description: 'app = saved in the app (overrides env)' }
+        editable: { type: boolean, description: 'false for non-first accounts when ACCOUNTS=true' }
+    ShopeeStatus:
+      type: object
+      properties:
+        available: { type: boolean, description: 'Login can be started (service runs on this machine)' }
+        connected: { type: boolean }
+        state: { type: string, enum: [idle, waiting, done, error] }
+        message: { type: string }
+    Session:
+      type: object
+      properties:
+        token: { type: string }
+        user: { type: object, properties: { id: { type: string }, email: { type: string }, name: { type: string } } }
+        household: { type: object, properties: { id: { type: string }, name: { type: string } } }
     LocationInput:
       type: object
       description: Provide place and/or lat+lng

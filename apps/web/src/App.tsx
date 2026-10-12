@@ -6,7 +6,11 @@ import { CollectionView } from './components/CollectionView';
 import { DetailModal } from './components/DetailModal';
 import { Dialog } from './components/Dialog';
 import { ScanView } from './components/ScanView';
-import { useHealth, useMeta, useStats } from './lib/api';
+import { AccountMenu, AuthScreen } from './components/AuthScreen';
+import { AiSettings } from './components/AiSettings';
+import { ShopeeMenu } from './components/ShopeeMenu';
+import { useHealth, useMeta, useStats, useToken } from './lib/api';
+import { LOCALES, getLocaleId, setLocaleId } from './lib/locale';
 import { say } from './lib/dialog';
 import { money, setCurrency } from './lib/format';
 import { desktop } from './lib/platform';
@@ -22,7 +26,9 @@ export function App() {
   const [soundOn, setSoundOn] = useState(Sound.enabled);
   const health = useHealth();
   const meta = useMeta();
-  const stats = useStats();
+  const token = useToken();
+  const stats = useStats(meta.isSuccess && (!meta.data.accounts || !!token));
+  const [localeId, setLocale] = useState(getLocaleId);
 
   if (meta.data) setCurrency(meta.data.currency);
 
@@ -51,7 +57,10 @@ export function App() {
   const h = health.data;
   const led = !h ? (health.isError ? ['off', 'SERVICE DOWN'] : ['', 'CONNECTING'])
     : !h.db ? ['off', 'DB OFFLINE']
-      : h.llm ? ['on', 'GEMMA ONLINE'] : ['off', 'GEMMA OFFLINE'];
+      : h.llm ? ['on', 'AI ONLINE'] : ['off', 'AI OFFLINE'];
+
+  if (meta.isPending) return <div className="app" />;
+  if (meta.data?.accounts && !token) return <AuthScreen />;
 
   return (
     <div className={`app${desktop ? ` is-desktop platform-${desktop.platform}` : ''}`}>
@@ -74,7 +83,20 @@ export function App() {
         <div className="hud">
           <div className="hud-stat"><span>ITEMS</span><b>{stats.data?.total ?? 0}</b></div>
           <div className="hud-stat"><span>TOTAL VALUE</span><b>{money(stats.data?.total_value ?? 0)}</b></div>
-          <div className={`hud-led ${led[0]}`} title={h ? `Model: ${h.model}` : 'Gemma status'}><i /><span>{led[1]}</span></div>
+          <div className={`hud-led ${led[0]}`} title={h ? `Model: ${h.model || 'not set'}` : 'AI status'}><i /><span>{led[1]}</span></div>
+          <select
+            className="locale-select"
+            value={localeId}
+            onChange={(e) => { setLocaleId(e.target.value); setLocale(e.target.value); Sound.play('click'); }}
+            title="Language, currency and market for new scans and listings"
+            aria-label="Scan locale"
+          >
+            <option value="">{meta.data ? `DEFAULT · ${meta.data.currency}` : 'DEFAULT'}</option>
+            {LOCALES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+          </select>
+          <AiSettings />
+          <ShopeeMenu />
+          {meta.data?.accounts && <AccountMenu />}
           <button
             className={`icon-btn${soundOn ? '' : ' off'}`}
             onClick={() => { setSoundOn(Sound.toggle()); Sound.play('click'); }}

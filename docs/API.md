@@ -16,14 +16,17 @@ dilakukan aplikasi lain lewat API ini.
  Aplikasi kamu (web / mobile / desktop)
           │  HTTPS + JSON (gambar = base64 data URL)
           ▼
- ITEMDEX service (Node/Fastify)  ──►  Gemma (vLLM, OpenAI-compatible)
+ ITEMDEX service (Node/Fastify)  ──►  Model AI (server OpenAI-compatible)
           │                            identifikasi, ukuran, harga, rarity
           ▼
  PostgreSQL: items, item_images (foto + thumbnail), item_locations (riwayat)
 ```
 
-Service ini yang **memegang key Gemma**. Aplikasi client tidak pernah memanggil
-Gemma langsung dan tidak boleh menyimpan `LLM_API_KEY`.
+Service ini yang **memegang key AI**. Aplikasi client tidak pernah memanggil
+server AI langsung dan tidak boleh menyimpan `LLM_API_KEY`. Server AI bisa dari
+provider mana saja yang model-nya bisa membaca gambar: **Claude** (API Anthropic), **DeepSeek**,
+**Google Gemini**, OpenAI, Ollama, atau server OpenAI-compatible lain (Gemma di vLLM, dll).
+URL, key, dan modelnya bisa diganti dari aplikasi (ikon ⚙), lihat tabel di bagian "Pengaturan server AI".
 
 Yang disediakan service:
 
@@ -53,7 +56,10 @@ Konfigurasi lewat `.env` (lihat `.env.example`):
 | Variabel | Default | Fungsi |
 |---|---|---|
 | `DATABASE_URL` | — (wajib) | Koneksi PostgreSQL, mis. `postgres://user:pass@localhost:5432/itemdex-ai-builder` |
-| `LLM_API_BASE`, `LLM_API_KEY`, `LLM_MODEL` | — (wajib) | Server Gemma (vLLM, OpenAI-compatible) |
+| `LLM_API_BASE`, `LLM_API_KEY`, `LLM_MODEL` | — (isi di sini **atau** di aplikasi) | Server AI (OpenAI-compatible, mendukung gambar). Nilai yang disimpan lewat ikon ⚙ di aplikasi (`PUT /settings/ai`) menimpa nilai ini |
+| `ACCOUNTS` | `false` | `true` = login email + password, koleksi dibagi per household (menggantikan `ITEMDEX_API_KEY`) |
+| `SHOPEE_STATE` | `.itemdex/shopee-state.json` | File sesi login Shopee untuk cek harga. Berisi cookie login: jaga kerahasiaannya |
+| `COMPS_DISCOUNT` | `0.9` | Harga di Shopee adalah harga tawar; nilai barang diset sekian kali median |
 | `PORT` | `7777` | Port HTTP |
 | `HOST` | `127.0.0.1` | Pakai `0.0.0.0` supaya bisa diakses device lain (HP, laptop tim) |
 | `ITEMDEX_API_KEY` | kosong (tanpa auth) | **Wajib diisi** kalau service bisa diakses dari luar laptop |
@@ -117,9 +123,13 @@ pernah berubah, jadi dikirim dengan `Cache-Control: immutable`.
 | `unauthorized` | 401 | Key salah atau tidak ada |
 | `not_found` | 404 | Item/route tidak ada |
 | `payload_too_large` | 413 | Gambar terlalu besar. Resize |
-| `llm_error` | 502 | Gemma mengembalikan error. Boleh retry |
-| `llm_unavailable` | 503 | Gemma tidak terjangkau (mis. VPN putus) atau belum dikonfigurasi. Boleh retry |
-| `llm_timeout` | 504 | Gemma lambat. Boleh retry |
+| `llm_error` | 502 | Server AI mengembalikan error. Boleh retry |
+| `llm_unavailable` | 503 | Server AI tidak terjangkau (mis. VPN putus) atau belum dikonfigurasi. Boleh retry |
+| `llm_timeout` | 504 | AI lambat. Boleh retry |
+| `forbidden` | 403 | Bukan akun pertama (ubah pengaturan AI), atau login Shopee dari jarak jauh |
+| `not_a_receipt` | 422 | AI tidak menemukan struk di gambar |
+| `not_connected` | 409 | Shopee belum terhubung (cek harga) |
+| `no_comps` / `comps_error` | 404 / 502 | Tidak ada listing Shopee yang cocok / browser atau Shopee bermasalah |
 | `db_unavailable` | 503 | PostgreSQL tidak bisa dihubungi. Boleh retry |
 | `internal` | 500 | Bug di service |
 
@@ -152,7 +162,7 @@ pernah berubah, jadi dikirim dengan `Cache-Control: immutable`.
 kartu dulu dan memilih simpan atau buang. Simpan pakai `POST /items`.
 
 ```
-client                         service                     Gemma
+client                         service                     AI
   │ POST /scan {images,hint}     │                            │
   │─────────────────────────────►│ analyze ──────────────────►│
   │◄─────────────────────────────│◄───────────────────────────│
@@ -176,7 +186,7 @@ Request `/scan`:
 ```
 
 - `images`: 1–6 foto **satu barang** (boleh beberapa angle). Untuk video, ambil ~4 frame merata lalu kirim dengan `"source": "video"`.
-- `hint` (opsional): catatan pemilik, ikut dibaca Gemma.
+- `hint` (opsional): catatan pemilik, ikut dibaca AI.
 
 Response:
 
@@ -206,7 +216,7 @@ Response:
 ```
 
 Hal penting dari response:
-- `is_item: false` artinya Gemma tidak menemukan barang fisik yang jelas. Sebaiknya minta user foto ulang.
+- `is_item: false` artinya AI tidak menemukan barang fisik yang jelas. Sebaiknya minta user foto ulang.
 - `best_frame` = indeks gambar yang paling jelas. Kirim gambar itu sebagai `image` saat menyimpan.
 - `location_guess` = tebakan lokasi dari background foto. Bisa dipakai sebagai default isian "lokasi".
 - Semua angka harga adalah **estimasi AI** untuk barang bekas, bukan harga pasti. Tampilkan sebagai estimasi.
@@ -262,9 +272,9 @@ Resep yang dipakai web app (lihat implementasi lengkap di [`apps/web/src/lib/liv
 4. **Lock:** barang yang sama terdeteksi **2× berturut-turut** (box overlap/IoU > 0.45 atau nama sama) **dan** kamera diam **1.2 s**, maka snap.
 5. **Snap:** ambil frame resolusi penuh dan juga crop di sekitar box (+15% padding). Kirim `[crop, full]` ke `/scan`. Crop menghasilkan gambar kartu yang lebih bersih, full frame memberi konteks lokasi.
 6. **Jangan snap ulang** barang yang sama: setelah snap, tunggu sampai `/detect` melihat "tidak ada barang" atau barang lain.
-7. Pause loop deteksi selama `/scan` berjalan dan selama user mereview kartu, supaya tidak membebani Gemma.
+7. Pause loop deteksi selama `/scan` berjalan dan selama user mereview kartu, supaya tidak membebani server AI.
 
-> Biaya: loop ini mengirim ~1 request/detik ke Gemma per user yang membuka kamera.
+> Biaya: loop ini mengirim ~1 request/detik ke server AI per user yang membuka kamera.
 > Untuk banyak user sekaligus, tambah jeda atau pakai tombol SNAP manual saja.
 
 ### 4.3 Koleksi
@@ -319,6 +329,81 @@ Lokasi lama masuk ke `location_history` (terbaru di depan, maks 20).
 
 ---
 
+### 4.4 Fitur lanjutan
+
+Semua endpoint di bagian ini butuh auth yang sama dengan `/items`.
+
+**Scan satu ruangan:** `POST /scan/room` dengan `{ "image": "data:image/jpeg;base64,…", "hint": "", "locale": {…} }`
+→ `{ "items": [ { "card": {…}, "box": [ymin, xmin, ymax, xmax] } ], "currency": "IDR", "elapsed_ms": 9000 }`.
+Maks 12 barang, `box` skala 0–1000 (null kalau tidak jelas). Crop gambar sesuai `box`, lalu simpan tiap barang
+dengan `POST /items`.
+
+**Bahasa, mata uang, pasar per request:** `POST /scan`, `/scan/room`, `/ask`, dan `/items/{id}/listing` menerima
+`"locale": { "language": "English", "currency": "USD", "market": "US" }` (semua opsional, default dari
+`CARD_LANGUAGE`, `CURRENCY`, `MARKET`). `/scan` mengembalikan `currency`; kirim lagi sebagai `currency` di
+`POST /items` supaya nilai barang tidak tercampur. `total_value` di `/items` dan `/stats` hanya menjumlah barang
+bermata uang service.
+
+**Tanya dengan kalimat biasa:** `POST /ask` dengan `{ "query": "alat di garasi yang harganya di atas 50rb" }`
+→ `{ "filters": { "q": "garasi", "types": ["TOOL"], "rarities": [], "min_value": 50000, "max_value": 0, "sort": "value", "flag": "" } }`.
+Teruskan ke `GET /items?q=&type=&rarity=&min_value=&max_value=&sort=&flag=`.
+
+**Filter siklus hidup:** `GET /items?flag=` salah satu dari `lent` (sedang dipinjam), `overdue` (lewat tanggal kembali),
+`sell_now` (harga di puncak), `warranty` (garansi habis ≤ 60 hari). `GET /stats` memuat `flags` berisi jumlah tiap filter.
+
+**Dipinjam:** `PUT /items/{id}/lend` `{ "to": "Budi", "due": "2026-11-01" }` (`due` opsional, `YYYY-MM-DD`);
+`DELETE /items/{id}/lend` kalau sudah kembali. Hasilnya di `item.lent`.
+
+**Struk dan garansi:** `POST /items/{id}/receipt` `{ "image": "data:…" }` membaca toko, tanggal, total, dan lama garansi,
+lalu menyimpannya di `item.purchase` (`warranty_until` dihitung otomatis). Koreksi manual:
+`PUT /items/{id}/purchase` `{ "store", "date", "price", "warranty_months" }`.
+
+**Riwayat harga:** `GET /items/{id}` memuat `value_history` (titik harga, terlama dulu; bertambah setiap
+`value.typical` berubah) dan `sell_now` (`true` kalau harga sekarang tertinggi sepanjang riwayat dan naik ≥ 10% dari awal).
+
+**Teks iklan jual:** `POST /items/{id}/listing` `{ "platform": "generic|tokopedia|facebook|ebay" }`
+→ `{ "listing": { "title", "description", "price", "currency", "platform" } }`.
+
+**Laporan inventaris:** `GET /report?format=csv` (unduh spreadsheet) atau `format=html` (halaman siap cetak, simpan sebagai PDF
+dari browser). Cocok untuk asuransi atau pindahan.
+
+**Cek harga di Shopee:** opsional, nilai default tetap estimasi AI.
+1. Sambungkan sekali: `POST /shopee/login` membuka jendela browser di komputer service; user login sendiri; polling
+   `GET /shopee` sampai `state: "done"` (`connected: true`). `DELETE /shopee` menghapus sesi.
+2. `POST /items/{id}/comps` mencari listing barang itu di Shopee (hanya barang bermata uang IDR, ±15 detik).
+   Kalau ada ≥ 3 listing yang cocok, `value` diset ke persentil 25/50/75 harganya (dikali `COMPS_DISCOUNT`) dan
+   hasilnya ada di `item.comps` (query, jumlah, sumber listing). Kalau Shopee belum terhubung: 409 `not_connected`.
+Shopee dapat memblokir browser otomatis; kalau tidak ada hasil, nilai tetap seperti semula.
+
+**Pengaturan server AI:** `GET /settings/ai` → `{ base_url, model, provider: "openai|anthropic", has_key, source: "app|env|none", editable }`
+(key tidak pernah dikirim balik).
+
+| Provider | `base_url` | Key | Catatan |
+|---|---|---|---|
+| Claude | `https://api.anthropic.com` | API key dari console.anthropic.com | Pakai API native Claude (otomatis dikenali dari URL). JSON dijamin lewat *forced tool use*. Bayar per pemakaian |
+| DeepSeek | `https://api.deepseek.com` | API key dari platform.deepseek.com | `deepseek-chat` hanya teks dan gagal di cek gambar; pakai model vision yang muncul di daftar TEST |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | API key dari aistudio.google.com | Ada tier gratis |
+| OpenAI | `https://api.openai.com/v1` | API key | mis. `gpt-4o-mini` |
+| Ollama | `http://localhost:11434` | tanpa key | Model vision saja: `llava`, `gemma3`, `qwen2.5vl` |
+| Server lain | URL-nya | opsional | Harus punya `/chat/completions` dan menerima gambar |
+
+URL tanpa path (hanya host) otomatis ditambah `/v1`; URL dengan path dipakai apa adanya.
+
+**Langganan Claude Pro/Max tidak bisa dipakai.** Anthropic hanya mengizinkan login langganan di Claude Code dan claude.ai,
+bukan di aplikasi lain, jadi ITEMDEX butuh API key (ditagih terpisah dari langganan). **Google Antigravity tidak punya API**
+(itu IDE); padanannya adalah Google Gemini di atas, yang memakai model yang sama. `PUT /settings/ai` `{ "base_url", "model", "api_key"?, "clear_key"? }` berlaku langsung
+tanpa restart; `api_key` kosong = pertahankan yang tersimpan. `POST /settings/ai/test` mencoba nilai dari form
+(tanpa menyimpan) dan mengembalikan `{ ok, message, models: [...] }`. Selain cek koneksi, key, dan nama model, TEST mengirim gambar kecil
+untuk memastikan model bisa membaca gambar (`ok: false` kalau tidak).
+
+**Akun dan household** (`ACCOUNTS=true`): `POST /auth/register` `{ email, password (≥ 8), name?, invite_code? }`
+dan `POST /auth/login` `{ email, password }` mengembalikan `{ token, user, household }`; kirim sebagai
+`Authorization: Bearer <token>` (berlaku 30 hari). Tanpa `invite_code`, akun baru membuat household sendiri;
+dengan kode, akun bergabung dan melihat koleksi yang sama. `GET /auth/me` memuat `invite_code` household,
+`POST /auth/logout` mengakhiri sesi. Belum ada pembatasan percobaan login: pasang rate limit sebelum dipublikasikan.
+
+---
+
 ## 5. Model data `Item`
 
 `Item` = semua field `Card` (lihat 4.1) + field berikut:
@@ -330,6 +415,12 @@ Lokasi lama masuk ke `location_history` (terbaru di depan, maks 20).
 | `image_url` | string \| null | URL absolut foto cover (resolusi penuh), bisa langsung untuk `<img>` |
 | `thumb_url` | string \| null | URL absolut thumbnail untuk grid/list |
 | `source` | `photo` \| `video` \| `camera` | Asal input |
+| `currency` | string | Mata uang nilai barang (mis. `IDR`) |
+| `lent` | `{ to, at, due }` \| null | Sedang dipinjam siapa |
+| `purchase` | `{ store, date, price, warranty_months, warranty_until }` \| null | Data struk dan garansi |
+| `comps` | object \| null | Hasil cek harga Shopee terakhir |
+| `value_history` | `{ typical, at }[]` | Titik harga (hanya di `GET /items/{id}`) |
+| `sell_now` | boolean | Harga di puncak dan naik ≥ 10% |
 | `location` | Location \| null | Lokasi terakhir |
 | `location_history` | Location[] | Riwayat, terbaru di depan (maks 20; kosong di list) |
 | `created_at`, `updated_at` | ISO 8601 | |
@@ -431,10 +522,12 @@ Di HP, `localhost` = HP itu sendiri. Pakai IP laptop yang menjalankan service
 
 ## 7. Deploy, keamanan, dan batasan
 
-- **Jangan expose tanpa key.** Kalau `HOST` bukan `127.0.0.1`, isi `ITEMDEX_API_KEY`. Kalau tidak, siapa pun bisa menghabiskan kuota Gemma. Service akan memberi WARNING di log.
+- **Jangan expose tanpa key.** Kalau `HOST` bukan `127.0.0.1`, isi `ITEMDEX_API_KEY`. Kalau tidak, siapa pun bisa menghabiskan kuota AI. Service akan memberi WARNING di log.
 - **Key ITEMDEX di aplikasi publik:** key yang ditanam di web/mobile app bisa dibaca orang. Untuk demo/hackathon ini cukup. Untuk produksi, taruh di backend kalian sendiri atau pakai login per user.
 - **CORS** hanya untuk web app di browser. Mobile/desktop/server tidak butuh CORS.
-- **Gemma harus terjangkau dari mesin service.** Server Gemma saat ini kemungkinan hanya bisa diakses dari jaringan internal/VPN. Kalau service di-deploy di cloud, pastikan Gemma bisa dijangkau dari sana.
+- **Server AI harus terjangkau dari mesin service.** Kalau server AI hanya ada di jaringan internal/VPN dan service di-deploy di cloud, pastikan server AI bisa dijangkau dari sana.
+- **Key AI yang disimpan lewat aplikasi** masuk ke tabel `settings` di PostgreSQL sebagai teks biasa (tidak pernah dikirim balik ke client). Dengan `ACCOUNTS=true` hanya akun pertama yang boleh mengubahnya.
+- **Sesi Shopee** disimpan di file (`SHOPEE_STATE`), bukan password. Login hanya bisa dimulai dari komputer yang menjalankan service (`HOST=127.0.0.1`). Pakai akun cadangan kalau bisa: Shopee bisa membatasi akses otomatis. Fitur ini butuh Chromium (`npx playwright-core install chromium`) dan tidak tersedia di Docker atau app desktop terpaket.
 - **Penyimpanan** ada di PostgreSQL (data kartu, foto, thumbnail, riwayat lokasi). Beberapa instance service boleh memakai database yang sama; migrasi dikunci dengan advisory lock. Backup = `pg_dump`. Service sendiri stateless, jadi aman di-redeploy.
 - **Data versi lama (v0.1, file JSON):** `npm run db:import-legacy -- "<folder itemdex-data>"` (tanpa argumen = folder data app desktop lama).
 - **Foto di `/media`** bisa diakses tanpa key (nama file acak/UUID). Jangan simpan foto sensitif.
@@ -447,7 +540,7 @@ Di HP, `localhost` = HP itu sendiri. Pakai IP laptop yang menjalankan service
 
 | Method | Path | Auth | Fungsi |
 |---|---|---|---|
-| GET | `/api/v1/health` | – | Status service + Gemma |
+| GET | `/api/v1/health` | – | Status service + AI |
 | GET | `/api/v1/meta` | – | Enum, limit, mata uang, bahasa |
 | POST | `/api/v1/detect` | ✓ | Deteksi barang di 1 frame (box 0–1000) |
 | POST | `/api/v1/scan` | ✓ | 1–6 gambar → data kartu (tidak disimpan) |
@@ -458,6 +551,20 @@ Di HP, `localhost` = HP itu sendiri. Pakai IP laptop yang menjalankan service
 | PATCH/PUT | `/api/v1/items/{id}` | ✓ | Edit sebagian (merge) |
 | PUT | `/api/v1/items/{id}/location` | ✓ | Update lokasi terakhir |
 | DELETE | `/api/v1/items/{id}` | ✓ | Hapus |
+| POST | `/api/v1/scan/room` | ✓ | 1 foto ruangan → kartu per barang (tidak disimpan) |
+| POST | `/api/v1/ask` | ✓ | Kalimat biasa → filter untuk `/items` |
+| GET | `/api/v1/report` | ✓ | Laporan inventaris (`format=csv\|html`) |
+| PUT/DELETE | `/api/v1/items/{id}/lend` | ✓ | Tandai dipinjam / sudah kembali |
+| PUT | `/api/v1/items/{id}/purchase` | ✓ | Isi data pembelian dan garansi |
+| POST | `/api/v1/items/{id}/receipt` | ✓ | Baca struk dengan AI |
+| POST | `/api/v1/items/{id}/listing` | ✓ | Teks iklan jual |
+| POST | `/api/v1/items/{id}/comps` | ✓ | Cek harga di Shopee |
+| GET/DELETE | `/api/v1/shopee` | ✓ | Status / hapus sesi Shopee |
+| POST | `/api/v1/shopee/login` | ✓ | Mulai login Shopee (lokal saja) |
+| GET/PUT | `/api/v1/settings/ai` | ✓ | Lihat / ubah URL, key, model AI |
+| POST | `/api/v1/settings/ai/test` | ✓ | Coba koneksi AI tanpa menyimpan |
+| POST | `/api/v1/auth/register`, `/auth/login` | – | Akun (`ACCOUNTS=true`) |
+| GET/POST | `/api/v1/auth/me`, `/auth/logout` | ✓ | Profil dan household / keluar |
 | GET | `/media/{id}` | – | Foto cover (pakai `image_url`) |
 | GET | `/media/{id}/thumb` | – | Thumbnail (pakai `thumb_url`) |
 | GET | `/api/docs` | – | Swagger UI |

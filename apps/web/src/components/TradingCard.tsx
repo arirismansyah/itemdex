@@ -1,7 +1,7 @@
 // The collectible card itself, plus the card back and the 3D tilt effect.
 
 import { forwardRef, memo, useEffect, useRef, type Ref } from 'react';
-import { RARITY_RANK, type Card, type ItemLocation } from '@itemdex/shared';
+import { RARITY_RANK, type Card, type ItemLocation, type Lent } from '@itemdex/shared';
 import { TYPE_META, date, dims, money, pad, placeLabel, weight } from '../lib/format';
 
 export type CardData = Card & {
@@ -9,6 +9,9 @@ export type CardData = Card & {
   number?: number;
   created_at?: string;
   location?: Partial<ItemLocation> | null;
+  currency?: string;
+  lent?: Lent | null;
+  sell_now?: boolean;
 };
 
 interface Props {
@@ -91,6 +94,12 @@ function TradingCardInner({ item, image, mini = false, place, className = '', on
             ? <img src={image} alt="" draggable={false} loading={mini ? 'lazy' : 'eager'} decoding="async" />
             : <div className="no-art">?</div>}
           <span className="art-badge">{item.size_class}</span>
+          {(item.sell_now || item.lent) && (
+            <span className="art-flags">
+              {item.sell_now && <b className="flag-sell">SELL NOW</b>}
+              {item.lent && <b className="flag-lent">LENT</b>}
+            </span>
+          )}
         </div>
         <div className="card-strip">
           NO.{pad(item.number)} · {dims(item.dimensions)} · {weight(item.weight_g)} · {item.created_at ? date(item.created_at) : 'NEW!'}
@@ -110,7 +119,7 @@ function TradingCardInner({ item, image, mini = false, place, className = '', on
           ))}
         </div>
         <div className="card-stats">
-          <div><span>VALUE</span><b>{money(item.value.typical)}</b></div>
+          <div><span>VALUE</span><b>{money(item.value.typical, { currency: item.currency })}</b></div>
           <div><span>COND.</span><b>{item.condition.label}</b></div>
           <div><span>LAST SEEN</span><b className="trunc">{seen || '???'}</b></div>
         </div>

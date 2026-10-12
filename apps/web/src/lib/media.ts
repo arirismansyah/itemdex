@@ -32,6 +32,22 @@ export async function imageFileToDataUrl(file: File): Promise<string> {
   }
 }
 
+// Crops a [ymin, xmin, ymax, xmax] (0-1000) box out of a photo, with a little margin.
+export async function cropBox(dataUrl: string, box: [number, number, number, number] | null): Promise<string> {
+  if (!box) return dataUrl;
+  const img = await loadImage(dataUrl);
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const pad = 0.04;
+  const x = Math.max(0, (box[1] / 1000 - pad) * W), y = Math.max(0, (box[0] / 1000 - pad) * H);
+  const w = Math.min(W - x, ((box[3] - box[1]) / 1000 + 2 * pad) * W);
+  const h = Math.min(H - y, ((box[2] - box[0]) / 1000 + 2 * pad) * H);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w);
+  canvas.height = Math.round(h);
+  canvas.getContext('2d')!.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
 // Small JPEG for the collection grid (keeps scrolling smooth on phones).
 export async function makeThumb(dataUrl: string): Promise<string> {
   const img = await loadImage(dataUrl);

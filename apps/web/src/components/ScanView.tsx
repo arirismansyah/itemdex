@@ -1,8 +1,8 @@
-// SCAN tab: live viewfinder (auto/manual snap) or uploads -> Gemma -> card preview -> save.
+// SCAN tab: live viewfinder (auto/manual snap) or uploads -> AI -> card preview -> save.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ScanResult, Source } from '@itemdex/shared';
-import { scan as scanApi, useCreateItem } from '../lib/api';
+import type { Card, RoomResult, ScanResult, Source } from '@itemdex/shared';
+import { scan as scanApi, scanRoom, useCreateItem } from '../lib/api';
 import { say } from '../lib/dialog';
 import { pad } from '../lib/format';
 import { LiveCam, type LiveStatus, type Shot, type SnapMode } from '../lib/livecam';
@@ -12,9 +12,15 @@ import { CardBack, TradingCard } from './TradingCard';
 
 const MAX_FRAMES = 6;
 const SCAN_LINES = [
-  'BOOTING GEMMA...', 'SCANNING PIXELS...', 'IDENTIFYING ITEM...', 'MEASURING SIZE...',
+  'BOOTING AI...', 'SCANNING PIXELS...', 'IDENTIFYING ITEM...', 'MEASURING SIZE...',
   'CHECKING MARKET PRICES...', 'ROLLING RARITY...', 'PRINTING CARD...',
 ];
+
+// Room scan result with each item already cropped out of the photo.
+interface RoomView { currency: string; items: { card: Card; crop: string; on: boolean }[] }
+
+// With a detector crop first and the full frame second, the room is the full frame.
+const roomImage = (imgs: string[]) => (imgs.length > 1 ? imgs[1] : imgs[0]);
 
 type Geo = { lat: number; lng: number; accuracy_m: number | null; source: 'exif' | 'device' };
 
@@ -26,8 +32,8 @@ function statusText(s: LiveStatus, mode: SnapMode, scanning: boolean): string {
   const name = s.name || '';
   const p = Math.round((s.progress || 0) * 8);
   switch (s.phase) {
-    case 'paused': return scanning ? 'GEMMA IS ANALYZING...' : 'REVIEW YOUR CARD';
-    case 'error': return 'GEMMA NOT RESPONDING... RETRYING';
+    case 'paused': return scanning ? 'AI IS ANALYZING...' : 'REVIEW YOUR CARD';
+    case 'error': return 'AI NOT RESPONDING... RETRYING';
     case 'searching': return 'SEARCHING FOR ITEM...';
     case 'detected': return mode === 'manual' ? `DETECTED: ${name} · PRESS SNAP` : `DETECTED: ${name} · HOLD IT THERE`;
     case 'hold': return `${name} · HOLD STILL!`;
@@ -81,11 +87,13 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const [place, setPlace] = useState('');
   const [flash, setFlash] = useState(0);
   const [hover, setHover] = useState(false);
+  const [roomMode, setRoomMode] = useState(false);
+  const [room, setRoom] = useState<RoomView | null>(null);
   const create = useCreateItem();
 
   // Latest values for callbacks fired by LiveCam.
-  const live = useRef({ frames, source, scanning, geo, hint });
-  live.current = { frames, source, scanning, geo, hint };
+  const live = useRef({ frames, source, scanning, geo, hint, roomMode });
+  live.current = { frames, source, scanning, geo, hint, roomMode };
 
   const usingCamera = source === 'camera';
   const camActive = status.phase !== 'off';
@@ -95,6 +103,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     if (!imgs.length || live.current.scanning) return;
     setScanning(true);
     setPreview(null);
+    setRoom(null);
     camRef.current?.setPaused(true);
     Sound.play('select');
 
@@ -105,12 +114,21 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
       });
     }
     try {
+      if (live.current.roomMode) {
+        const photo = roomImage(imgs);
+        const res: RoomResult = await scanRoom(photo, live.current.hint);
+        if (!res.items.length) throw new Error('No items found. Try a closer, brighter photo.');
+        const crops = await Promise.all(res.items.map((it) => Media.cropBox(photo, it.box).catch(() => photo)));
+        setRoom({ currency: res.currency, items: res.items.map((it, i) => ({ card: it.card, crop: crops[i], on: true })) });
+        say(`Found ${res.items.length} items! (${(res.elapsed_ms / 1000).toFixed(1)}s)`, { sound: 'appear' });
+        return;
+      }
       const res = await scanApi({ images: imgs, hint: live.current.hint, source: src });
       setPreview(res);
       setPlace((p) => p || res.card.location_guess);
       const name = res.card.name.toUpperCase();
       if (res.card.is_item) say(`A wild ${name} appeared! (${(res.elapsed_ms / 1000).toFixed(1)}s)`, { sound: 'appear' });
-      else say(`Hmm... Gemma isn't sure this is an item. Best guess: ${name}.`, { sound: 'error' });
+      else say(`Hmm... the AI isn't sure this is an item. Best guess: ${name}.`, { sound: 'error' });
       if (window.matchMedia('(max-width: 900px)').matches) {
         requestAnimationFrame(() => stageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
@@ -238,6 +256,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const reset = useCallback(() => {
     setFrames([]);
     setPreview(null);
+    setRoom(null);
     setGeo(null);
     setHint('');
     setPlace('');
@@ -263,6 +282,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
         image,
         thumb,
         source,
+        currency: preview.currency,
         location: { place: place.trim() || card.location_guess, ...(geo || {}) },
       });
       setCaught(true);
@@ -271,6 +291,34 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     } catch (err) {
       say(`Save failed: ${(err as Error).message}`, { sound: 'error' });
     }
+  };
+
+  const saveRoom = async () => {
+    if (!room) return;
+    const picked = room.items.filter((i) => i.on);
+    let saved = 0;
+    try {
+      for (const it of picked) { // one at a time so card numbers follow the order on screen
+        const thumb = await Media.makeThumb(it.crop).catch(() => it.crop);
+        await create.mutateAsync({
+          card: it.card, image: it.crop, thumb, source, currency: room.currency,
+          location: { place: place.trim() || it.card.location_guess, ...(geo || {}) },
+        });
+        saved++;
+      }
+      setCaught(true);
+      say(`Gotcha! ${saved} items registered!`, { sound: 'get' });
+      setTimeout(reset, 1400);
+    } catch (err) {
+      say(`Saved ${saved} of ${picked.length}. ${(err as Error).message}`, { sound: 'error', hold: 6000 });
+    }
+  };
+
+  const toggleRoom = () => {
+    Sound.play('click');
+    setRoomMode((r) => !r);
+    setPreview(null);
+    setRoom(null);
   };
 
   const discard = () => {
@@ -292,6 +340,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
           <div className="mode-toggle" role="group" aria-label="Snap mode">
             <button className={`mode${mode === 'auto' ? ' active' : ''}`} onClick={() => setMode('auto')} title="Snap automatically when an item is locked">AUTO SNAP</button>
             <button className={`mode${mode === 'manual' ? ' active' : ''}`} onClick={() => setMode('manual')} title="Take shots yourself (multiple angles)">MANUAL</button>
+            <button className={`mode${roomMode ? ' active' : ''}`} onClick={toggleRoom} aria-pressed={roomMode} title="One photo of a shelf, drawer or room: a card for every item in it">ROOM</button>
           </div>
         </div>
 
@@ -348,11 +397,11 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
 
         <div className="field-row">
           <label className="field">
-            <span>NOTE FOR GEMMA <em>(optional)</em></span>
+            <span>NOTE FOR THE AI <em>(optional)</em></span>
             <input value={hint} onChange={(e) => setHint(e.target.value)} maxLength={300} placeholder="e.g. bought 2022, minor scratch" />
           </label>
           <label className="field">
-            <span>WHERE IS IT NOW? <em>(Gemma will guess)</em></span>
+            <span>WHERE IS IT NOW? <em>(the AI will guess)</em></span>
             <input value={place} onChange={(e) => setPlace(e.target.value)} maxLength={80} placeholder="e.g. lemari kamar, rak 2" />
           </label>
           <button className="btn btn-primary scan-btn" disabled={!frames.length || scanning} onClick={() => runScan(frames, source)}>▶ SCAN</button>
@@ -364,10 +413,23 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
         <div className="card-stage">
           {scanning ? (
             <Scanner cover={frames[0]} />
+          ) : room ? (
+            <div className="room-grid">
+              {room.items.map((it, i) => (
+                <label className={`room-pick${it.on ? ' on' : ''}`} key={i}>
+                  <input
+                    type="checkbox"
+                    checked={it.on}
+                    onChange={() => setRoom({ ...room, items: room.items.map((x, k) => (k === i ? { ...x, on: !x.on } : x)) })}
+                  />
+                  <TradingCard item={{ ...it.card, currency: room.currency }} image={it.crop} mini />
+                </label>
+              ))}
+            </div>
           ) : preview ? (
             <div className="reveal" key={preview.elapsed_ms}>
               <TradingCard
-                item={preview.card}
+                item={{ ...preview.card, currency: preview.currency }}
                 image={frames[preview.best_frame] || frames[0] || null}
                 place={place.trim() || preview.card.location_guess}
                 className={caught ? 'caught' : ''}
@@ -377,6 +439,15 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
             <div className="stage-idle"><CardBack /><p className="blink">INSERT ITEM TO BEGIN</p></div>
           )}
         </div>
+        {room && !scanning && (
+          <div className="result-actions">
+            <button className="btn btn-primary" onClick={saveRoom} disabled={create.isPending || caught || !room.items.some((i) => i.on)}>
+              ★ SAVE {room.items.filter((i) => i.on).length} TO DEX
+            </button>
+            <button className="btn" onClick={() => runScan(frames, source)}>↻ RESCAN</button>
+            <button className="btn btn-danger" onClick={discard}>✕ DISCARD</button>
+          </div>
+        )}
         {preview && !scanning && (
           <div className="result-actions">
             <button className="btn btn-primary" onClick={save} disabled={create.isPending || caught}>★ SAVE TO DEX</button>

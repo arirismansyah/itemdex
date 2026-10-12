@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import type { ShopeeConfig } from './comps.js';
 
 export interface Config {
   host: string;
@@ -19,6 +20,8 @@ export interface Config {
   market: string;
   reverseGeocode: boolean;
   apiKey: string; // ITEMDEX_API_KEY: protects /api when the service is exposed
+  shopee: ShopeeConfig; // marketplace price check
+  accounts: boolean; // ACCOUNTS=true: email/password sign-in + shared households (replaces apiKey)
   corsOrigins: string[];
   publicUrl: string; // absolute base for image URLs; derived from the request when empty
   bodyLimitMb: number;
@@ -60,6 +63,12 @@ export function loadConfig(overrides: Partial<Config> = {}, env = process.env): 
     market: env.MARKET || 'Indonesian',
     reverseGeocode: bool(env.REVERSE_GEOCODE, true),
     apiKey: env.ITEMDEX_API_KEY || '',
+    shopee: {
+      state: path.resolve(env.SHOPEE_STATE || '.itemdex/shopee-state.json'),
+      discount: Number(env.COMPS_DISCOUNT) || 0.9,
+      canLogin: ['127.0.0.1', 'localhost', '::1'].includes(env.HOST || '127.0.0.1'),
+    },
+    accounts: bool(env.ACCOUNTS, false),
     corsOrigins: (env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
     publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),
     bodyLimitMb: Number(env.BODY_LIMIT_MB) || 40,

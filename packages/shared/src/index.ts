@@ -10,6 +10,9 @@ export const SIZE_CLASSES = ['TINY', 'SMALL', 'MEDIUM', 'LARGE', 'HUGE'] as cons
 export const CONFIDENCES = ['LOW', 'MEDIUM', 'HIGH'] as const;
 export const SOURCES = ['photo', 'video', 'camera'] as const;
 export const SORTS = ['new', 'old', 'value', 'rarity', 'name', 'number'] as const;
+// Collection filters driven by the item's life after cataloguing.
+export const FLAGS = ['lent', 'overdue', 'sell_now', 'warranty'] as const;
+export const PLATFORMS = ['generic', 'tokopedia', 'facebook', 'ebay'] as const;
 
 export type ItemType = (typeof TYPES)[number];
 export type Rarity = (typeof RARITIES)[number];
@@ -18,6 +21,8 @@ export type SizeClass = (typeof SIZE_CLASSES)[number];
 export type Confidence = (typeof CONFIDENCES)[number];
 export type Source = (typeof SOURCES)[number];
 export type Sort = (typeof SORTS)[number];
+export type Flag = (typeof FLAGS)[number];
+export type Platform = (typeof PLATFORMS)[number];
 
 export const RARITY_RANK: Record<Rarity, number> = {
   COMMON: 1, UNCOMMON: 2, RARE: 3, EPIC: 4, LEGENDARY: 5,
@@ -63,19 +68,76 @@ export interface ItemLocation {
   at: string;
 }
 
+export interface Lent { to: string; at: string; due: string | null }
+export interface Purchase {
+  store: string;
+  date: string | null;
+  price: number;
+  warranty_months: number;
+  warranty_until: string | null;
+}
+export interface Comp { title: string; price: number; url: string; site: string }
+export interface Comps {
+  query: string;
+  engine: string;
+  n: number;
+  median: number;
+  low: number;
+  high: number;
+  sources: Comp[];
+  at: string;
+}
+export interface ValuePoint { typical: number; at: string }
+export interface Locale { language: string; currency: string; market: string }
+
 export interface Item extends Card {
   id: string;
   number: number;
   source: Source;
+  currency: string;
   location: ItemLocation | null;
   location_history: ItemLocation[];
+  lent: Lent | null;
+  purchase: Purchase | null;
+  comps: Comps | null; // last marketplace price check
+  value_history: ValuePoint[]; // only on GET /items/:id
+  sell_now: boolean; // value is at its all-time high and up 10%+ since first recorded
   image_url: string | null;
   thumb_url: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface ScanResult { card: Card; best_frame: number; elapsed_ms: number }
+export interface ScanResult { card: Card; best_frame: number; currency: string; elapsed_ms: number }
+export interface RoomResult { items: { card: Card; box: [number, number, number, number] | null }[]; currency: string; elapsed_ms: number }
+export interface Listing { title: string; description: string; price: number; currency: string; platform: Platform }
+export interface AskFilters {
+  q: string;
+  types: string[];
+  rarities: string[];
+  min_value: number;
+  max_value: number;
+  sort: Sort;
+  flag: Flag | '';
+}
+export interface ShopeeStatus {
+  available: boolean; // login can be started (service runs on this machine)
+  connected: boolean;
+  state: 'idle' | 'waiting' | 'done' | 'error';
+  message: string;
+}
+export interface AiConfig {
+  base_url: string;
+  model: string;
+  provider: 'openai' | 'anthropic'; // detected from the URL: Claude uses its own API
+  has_key: boolean;
+  source: 'app' | 'env' | 'none'; // where the current values come from
+  editable: boolean; // false for non-admin members in accounts mode
+}
+export interface AiTest { ok: boolean; message: string; models: string[] }
+export interface AuthUser { id: string; email: string; name: string }
+export interface Household { id: string; name: string; invite_code: string; members: AuthUser[] }
+export interface Session { token: string; user: AuthUser; household: { id: string; name: string } }
 export interface DetectResult {
   has_item: boolean;
   name: string;
@@ -83,7 +145,12 @@ export interface DetectResult {
   elapsed_ms: number;
 }
 export interface ItemList { items: Item[]; total: number; total_value: number; offset: number; limit: number }
-export interface Stats { total: number; total_value: number; types: Partial<Record<ItemType, number>> }
+export interface Stats {
+  total: number;
+  total_value: number; // items in the service currency only
+  types: Partial<Record<ItemType, number>>;
+  flags: Record<Flag, number>;
+}
 export interface Meta {
   version: string;
   model: string;
@@ -91,6 +158,7 @@ export interface Meta {
   language: string;
   market: string;
   auth_required: boolean;
+  accounts: boolean;
   enums: Record<string, readonly string[]>;
   limits: Record<string, number>;
 }
