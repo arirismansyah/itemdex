@@ -170,6 +170,13 @@ Full API guide: [docs/API.md](docs/API.md) · Swagger: `http://localhost:7777/ap
      still for ~1.2s the lock bar fills, it snaps and scans by itself.
    - **MANUAL**: press **SNAP** (or Space) for each angle, then **SCAN**.
    - No camera? **⇪ PHOTO / ⇪ VIDEO** upload (or drag & drop onto the viewfinder).
+   - **ROOM** (separate toggle next to AUTO SNAP / MANUAL): off = one item per scan; on = one photo of a shelf,
+     drawer or table gives up to 12 cards. Use MANUAL or upload a photo (room mode reads one photo: the first if you
+     upload several; a video uses its middle frame). Untick cards you do not want, then **SAVE n TO DEX**.
+   - Optional **NOTE FOR THE AI**, **WHERE IS IT NOW?**, **CATEGORY** and **TAGS** (comma separated) fields: your category
+     replaces the AI's guess and your tags are added to the AI's (max 6). Both can be changed later with ✎ EDIT, and tags
+     are searchable. In room mode they apply to every item in the photo.
+   - Hover any button or area for a tooltip that explains it.
 2. Card flips in (~5s) → **SAVE TO DEX** → back to live camera.
 3. **COLLECTION** → search by name/tag/**location**, filter by type, sort by value/rarity.
    Tap a card for details, value reasoning, location history, OPEN MAP, EDIT, EXPORT PNG.

@@ -46,7 +46,7 @@ export function ValueBlock({ item }: { item: Item }) {
   };
 
   return (
-    <section className="info-sec value-sec">
+    <section className="info-sec value-sec" title="Estimated resale value and how it changed over time">
       <h4>
         MARKET VALUE <em>({c && v.reasoning.includes('Shopee') ? 'SHOPEE' : 'AI ESTIMATE'} · {v.confidence} CONFIDENCE)</em>
         {item.sell_now && <b className="flag-sell inline">SELL NOW</b>}
@@ -74,7 +74,7 @@ export function ValueBlock({ item }: { item: Item }) {
         </ul>
       )}
       {cur === 'IDR' && shopee.data?.connected && (
-        <button className="btn btn-small" onClick={check} disabled={verify.isPending}>
+        <button className="btn btn-small" onClick={check} disabled={verify.isPending} title="Search Shopee for this item and set the value from real listings (takes about 15 seconds)">
           {verify.isPending ? 'SEARCHING SHOPEE...' : c ? `↻ RE-CHECK ON SHOPEE (${ago(c.at)})` : '⌕ CHECK ON SHOPEE'}
         </button>
       )}
@@ -110,7 +110,7 @@ export function LendBlock({ item }: { item: Item }) {
   };
 
   return (
-    <section className="info-sec">
+    <section className="info-sec" title="Track who has borrowed this item">
       <h4>LENT OUT</h4>
       {l ? (
         <>
@@ -118,13 +118,13 @@ export function LendBlock({ item }: { item: Item }) {
             With {l.to} <em>since {date(l.at)}</em>
           </p>
           {l.due && <p className={overdue ? 'overdue' : 'muted'}>{overdue ? 'OVERDUE · ' : ''}DUE {date(l.due)}</p>}
-          <button className="btn btn-small btn-primary" onClick={returned} disabled={back.isPending}>✔ RETURNED</button>
+          <button className="btn btn-small btn-primary" onClick={returned} disabled={back.isPending} title="The item is back with you">✔ RETURNED</button>
         </>
       ) : (
         <form className="move-form" onSubmit={submit}>
-          <input value={to} onChange={(e) => setTo(e.target.value)} maxLength={80} placeholder="Lent it to...?" aria-label="Lent to" required />
-          <input type="date" value={due} min={today()} onChange={(e) => setDue(e.target.value)} aria-label="Due date" />
-          <button className="btn btn-small" disabled={lend.isPending || !to.trim()}>LEND</button>
+          <input value={to} onChange={(e) => setTo(e.target.value)} maxLength={80} placeholder="Lent it to...?" aria-label="Lent to" title="Who has the item now" required />
+          <input type="date" value={due} min={today()} onChange={(e) => setDue(e.target.value)} aria-label="Due date" title="Optional return date; after it the item shows as OVERDUE" />
+          <button className="btn btn-small" disabled={lend.isPending || !to.trim()} title="Mark the item as lent out">LEND</button>
         </form>
       )}
     </section>
@@ -147,7 +147,7 @@ export function PurchaseBlock({ item }: { item: Item }) {
   };
 
   return (
-    <section className="info-sec">
+    <section className="info-sec" title="Receipt details and when the warranty ends">
       <h4>PURCHASE &amp; WARRANTY</h4>
       {p ? (
         <>
@@ -161,7 +161,7 @@ export function PurchaseBlock({ item }: { item: Item }) {
           )}
         </>
       ) : <p className="muted">No receipt yet.</p>}
-      <button className="btn btn-small" onClick={() => input.current?.click()} disabled={receipt.isPending}>
+      <button className="btn btn-small" onClick={() => input.current?.click()} disabled={receipt.isPending} title="Photo of the receipt: the AI reads the store, date, price and warranty">
         {receipt.isPending ? 'READING...' : p ? '⇪ REPLACE RECEIPT' : '⇪ SCAN RECEIPT'}
       </button>
       <input ref={input} type="file" accept="image/*" hidden onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ''; }} />
@@ -188,20 +188,20 @@ export function ListingBlock({ item }: { item: Item }) {
   };
 
   return (
-    <section className="info-sec">
+    <section className="info-sec" title="Make a ready-to-post sale listing">
       <h4>SELL IT</h4>
       <div className="move-form">
-        <select value={platform} onChange={(e) => setPlatform(e.target.value as Platform)} aria-label="Marketplace">
+        <select value={platform} onChange={(e) => setPlatform(e.target.value as Platform)} aria-label="Marketplace" title="Where you will post the listing; the text is written in that style">
           {PLATFORMS.map((p) => <option key={p} value={p}>{p.toUpperCase()}</option>)}
         </select>
-        <button className="btn btn-small btn-primary" onClick={generate} disabled={busy}>{busy ? 'WRITING...' : '✎ WRITE LISTING'}</button>
+        <button className="btn btn-small btn-primary" onClick={generate} disabled={busy} title="Let the AI write a title, description and price for selling this item">{busy ? 'WRITING...' : '✎ WRITE LISTING'}</button>
       </div>
       {listing && (
         <div className="listing">
           <b>{listing.title}</b>
           <p className="big-value">{money(listing.price, { compact: false, currency: listing.currency })}</p>
           <textarea readOnly rows={7} value={listing.description} aria-label="Listing text" />
-          <button className="btn btn-small" onClick={copy}>⧉ COPY</button>
+          <button className="btn btn-small" onClick={copy} title="Copy title, price and description to the clipboard">⧉ COPY</button>
         </div>
       )}
     </section>

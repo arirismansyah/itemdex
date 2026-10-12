@@ -85,26 +85,26 @@ export function AiSettings() {
           </p>
           {!editable && <p className="overdue small">Only the first account can change this.</p>}
           <label className="field"><span>PROVIDER</span>
-            <select value={preset.id} onChange={(e) => pick(e.target.value)} disabled={!editable}>
+            <select value={preset.id} onChange={(e) => pick(e.target.value)} disabled={!editable} title="Pick a provider to fill in its URL; you can still edit it">
               {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
           </label>
           <p className="muted small">{preset.hint}</p>
           <label className="field"><span>URL</span>
-            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-ai-server" disabled={!editable} required />
+            <input value={url} onChange={(e) => setUrl(e.target.value)} title="Address of the AI server. A bare host gets /v1 added" placeholder="https://your-ai-server" disabled={!editable} required />
           </label>
           <label className="field"><span>MODEL</span>
-            <input value={model} onChange={(e) => setModel(e.target.value)} list="ai-models" placeholder="model name" disabled={!editable} required />
+            <input value={model} onChange={(e) => setModel(e.target.value)} title="Model name. It must be able to read images. Press TEST to list what the server offers" list="ai-models" placeholder="model name" disabled={!editable} required />
             <datalist id="ai-models">{models.map((m) => <option key={m} value={m} />)}</datalist>
           </label>
           <label className="field"><span>API KEY {cfg?.has_key && <em>(saved: leave empty to keep)</em>}</span>
-            <input type="password" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" placeholder={cfg?.has_key ? '••••••••' : 'optional'} disabled={!editable} />
+            <input type="password" title="API key from your provider. Stored on the server and never shown again" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" placeholder={cfg?.has_key ? '••••••••' : 'optional'} disabled={!editable} />
           </label>
           {result && <p className={result.ok ? 'ok small' : 'overdue small'} role="status">{result.message}</p>}
           {editable && (
             <div className="move-form">
-              <button type="button" className="btn btn-small" onClick={test} disabled={testing || !url.trim()}>{testing ? '...' : '⚡ TEST'}</button>
-              <button className="btn btn-small btn-primary" disabled={save.isPending || !url.trim() || !model.trim()}>✔ SAVE</button>
+              <button type="button" className="btn btn-small" onClick={test} disabled={testing || !url.trim()} title="Check the server, the key and that the model accepts images (does not save)">{testing ? '...' : '⚡ TEST'}</button>
+              <button className="btn btn-small btn-primary" disabled={save.isPending || !url.trim() || !model.trim()} title="Use this AI server from now on (no restart needed)">✔ SAVE</button>
               {cfg?.has_key && <button type="button" className="btn btn-small btn-danger" onClick={clearKey} disabled={save.isPending} title="Remove the saved API key">✕ KEY</button>}
             </div>
           )}

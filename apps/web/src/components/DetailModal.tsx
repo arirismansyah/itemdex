@@ -35,7 +35,7 @@ function LocationBlock({ item }: { item: Item }) {
   };
 
   return (
-    <section className="info-sec loc-sec">
+    <section className="info-sec loc-sec" title="Where the item was last seen, with its recent moves">
       <h4>LAST SEEN</h4>
       {loc ? (
         <>
@@ -48,15 +48,15 @@ function LocationBlock({ item }: { item: Item }) {
                 {loc.accuracy_m ? <em>±{loc.accuracy_m}m</em> : null}
                 <em>{loc.source === 'exif' ? 'PHOTO EXIF' : 'DEVICE GPS'}</em>
               </p>
-              <a className="btn btn-small" href={mapUrl(loc)} target="_blank" rel="noopener noreferrer">⌖ OPEN MAP</a>
+              <a className="btn btn-small" title="Open this spot on OpenStreetMap" href={mapUrl(loc)} target="_blank" rel="noopener noreferrer">⌖ OPEN MAP</a>
             </>
           )}
         </>
       ) : <p className="muted">Location unknown.</p>}
       <form className="move-form" onSubmit={submit}>
         <input value={place} onChange={(e) => setPlace(e.target.value)} maxLength={80} placeholder="Moved it? Where is it now?" aria-label="New location" />
-        <label className="check"><input type="checkbox" checked={gps} onChange={(e) => setGps(e.target.checked)} /> + GPS</label>
-        <button className="btn btn-small btn-primary" disabled={move.isPending}>{move.isPending ? '...' : 'UPDATE'}</button>
+        <label className="check" title="Also save this device's GPS position"><input type="checkbox" checked={gps} onChange={(e) => setGps(e.target.checked)} /> + GPS</label>
+        <button className="btn btn-small btn-primary" disabled={move.isPending} title="Record where the item is now; the old place stays in the history">{move.isPending ? '...' : 'UPDATE'}</button>
       </form>
       {history.length > 0 && (
         <ul className="history">
@@ -83,6 +83,8 @@ function EditForm({ item, onDone }: { item: Item; onDone: () => void }) {
           name: f.name,
           brand: f.brand,
           model: f.model,
+          subcategory: f.subcategory,
+          tags: f.tags.split(',').map((t) => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean),
           type: f.type as Item['type'],
           rarity: f.rarity as Item['rarity'],
           description: f.description,
@@ -105,21 +107,23 @@ function EditForm({ item, onDone }: { item: Item; onDone: () => void }) {
       <form className="edit-form" onSubmit={submit}>
         <label className="wide">NAME<input name="name" defaultValue={item.name} maxLength={40} required /></label>
         <label>BRAND<input name="brand" defaultValue={item.brand} /></label>
+        <label title="Your own category, e.g. Laptop or Power tool">CATEGORY<input name="subcategory" defaultValue={item.subcategory} maxLength={60} /></label>
         <label>MODEL<input name="model" defaultValue={item.model} /></label>
-        <label>TYPE<select name="type" defaultValue={item.type}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select></label>
-        <label>RARITY<select name="rarity" defaultValue={item.rarity}>{RARITIES.map((r) => <option key={r}>{r}</option>)}</select></label>
+        <label title="Card element, e.g. ELECTRONIC or TOOL">TYPE<select name="type" defaultValue={item.type}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select></label>
+        <label title="How special the item is (1 to 5 stars)">RARITY<select name="rarity" defaultValue={item.rarity}>{RARITIES.map((r) => <option key={r}>{r}</option>)}</select></label>
         <label>LENGTH cm<input name="length_cm" type="number" inputMode="decimal" step="0.1" min="0" defaultValue={d.length_cm} /></label>
         <label>WIDTH cm<input name="width_cm" type="number" inputMode="decimal" step="0.1" min="0" defaultValue={d.width_cm} /></label>
         <label>HEIGHT cm<input name="height_cm" type="number" inputMode="decimal" step="0.1" min="0" defaultValue={d.height_cm} /></label>
         <label>WEIGHT g<input name="weight_g" type="number" inputMode="numeric" min="0" defaultValue={item.weight_g} /></label>
-        <label>VALUE MIN<input name="min" type="number" inputMode="numeric" min="0" defaultValue={v.min} /></label>
-        <label>VALUE TYPICAL<input name="typical" type="number" inputMode="numeric" min="0" defaultValue={v.typical} /></label>
-        <label>VALUE MAX<input name="max" type="number" inputMode="numeric" min="0" defaultValue={v.max} /></label>
-        <label>CONDITION (HP)<input name="score" type="number" inputMode="numeric" min="0" max="100" defaultValue={item.condition.score} /></label>
+        <label title="Lowest realistic resale price">VALUE MIN<input name="min" type="number" inputMode="numeric" min="0" defaultValue={v.min} /></label>
+        <label title="Most likely resale price; used for totals and sorting">VALUE TYPICAL<input name="typical" type="number" inputMode="numeric" min="0" defaultValue={v.typical} /></label>
+        <label title="Highest realistic resale price">VALUE MAX<input name="max" type="number" inputMode="numeric" min="0" defaultValue={v.max} /></label>
+        <label title="0 to 100; shown as HP on the card">CONDITION (HP)<input name="score" type="number" inputMode="numeric" min="0" max="100" defaultValue={item.condition.score} /></label>
+        <label className="wide" title="Comma-separated, max 6. Tags are searchable">TAGS<input name="tags" defaultValue={item.tags.join(', ')} maxLength={120} /></label>
         <label className="wide">DESCRIPTION<textarea name="description" rows={3} defaultValue={item.description} /></label>
         <div className="info-actions wide">
-          <button className="btn btn-primary" disabled={update.isPending}>✔ SAVE</button>
-          <button type="button" className="btn" onClick={onDone}>CANCEL</button>
+          <button className="btn btn-primary" disabled={update.isPending} title="Save your changes to this card">✔ SAVE</button>
+          <button type="button" className="btn" onClick={onDone} title="Close the form without saving">CANCEL</button>
         </div>
       </form>
     </>
@@ -197,7 +201,7 @@ export function DetailModal({ initial, onClose }: { initial: Item; onClose: () =
               <LendBlock item={item} />
               <PurchaseBlock item={item} />
               <ListingBlock item={item} />
-              <section className="info-sec">
+              <section className="info-sec" title="Details the AI read from the photo; EDIT to correct them">
                 <h4>DATA</h4>
                 <table className="data">
                   <tbody>
@@ -213,9 +217,9 @@ export function DetailModal({ initial, onClose }: { initial: Item; onClose: () =
                 </table>
               </section>
               <div className="info-actions">
-                <button className="btn" onClick={() => { Sound.play('click'); setEditing(true); }}>✎ EDIT</button>
-                <button className="btn" onClick={doExport} disabled={exporting}>⇩ EXPORT PNG</button>
-                <button className={`btn btn-danger${confirmDelete ? ' confirm' : ''}`} onClick={remove} disabled={del.isPending}>
+                <button className="btn" onClick={() => { Sound.play('click'); setEditing(true); }} title="Edit the card: name, category, tags, size, value, condition">✎ EDIT</button>
+                <button className="btn" onClick={doExport} disabled={exporting} title="Save this card as a PNG picture to share or print">⇩ EXPORT PNG</button>
+                <button className={`btn btn-danger${confirmDelete ? ' confirm' : ''}`} onClick={remove} disabled={del.isPending} title="Delete this card (press twice to confirm)">
                   {confirmDelete ? 'SURE? CLICK AGAIN' : '✕ RELEASE'}
                 </button>
               </div>

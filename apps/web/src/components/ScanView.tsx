@@ -19,8 +19,12 @@ const SCAN_LINES = [
 // Room scan result with each item already cropped out of the photo.
 interface RoomView { currency: string; items: { card: Card; crop: string; on: boolean }[] }
 
-// With a detector crop first and the full frame second, the room is the full frame.
-const roomImage = (imgs: string[]) => (imgs.length > 1 ? imgs[1] : imgs[0]);
+// Which picture is "the room": a camera snap holds the detector crop first and the full frame second,
+// a video uses its middle frame, and an uploaded photo is used as is (the first one if there are several).
+const roomImage = (imgs: string[], src: Source) =>
+  src === 'camera' && imgs.length > 1 ? imgs[1] : src === 'video' ? imgs[Math.floor(imgs.length / 2)] : imgs[0];
+
+const parseTags = (text: string) => text.split(',').map((t) => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean);
 
 type Geo = { lat: number; lng: number; accuracy_m: number | null; source: 'exif' | 'device' };
 
@@ -85,6 +89,8 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const [caught, setCaught] = useState(false);
   const [hint, setHint] = useState('');
   const [place, setPlace] = useState('');
+  const [category, setCategory] = useState('');
+  const [tagsText, setTagsText] = useState('');
   const [flash, setFlash] = useState(0);
   const [hover, setHover] = useState(false);
   const [roomMode, setRoomMode] = useState(false);
@@ -92,6 +98,13 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const create = useCreateItem();
 
   // Latest values for callbacks fired by LiveCam.
+  // The user's own category / tags win over the AI's; their tags come first.
+  const withUser = (c: Card): Card => ({
+    ...c,
+    subcategory: category.trim() || c.subcategory,
+    tags: [...new Set([...parseTags(tagsText), ...c.tags])].slice(0, 6),
+  });
+
   const live = useRef({ frames, source, scanning, geo, hint, roomMode });
   live.current = { frames, source, scanning, geo, hint, roomMode };
 
@@ -115,12 +128,13 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     }
     try {
       if (live.current.roomMode) {
-        const photo = roomImage(imgs);
+        const photo = roomImage(imgs, src);
         const res: RoomResult = await scanRoom(photo, live.current.hint);
         if (!res.items.length) throw new Error('No items found. Try a closer, brighter photo.');
         const crops = await Promise.all(res.items.map((it) => Media.cropBox(photo, it.box).catch(() => photo)));
         setRoom({ currency: res.currency, items: res.items.map((it, i) => ({ card: it.card, crop: crops[i], on: true })) });
-        say(`Found ${res.items.length} items! (${(res.elapsed_ms / 1000).toFixed(1)}s)`, { sound: 'appear' });
+        const extra = src === 'photo' && imgs.length > 1 ? ` Room mode reads one photo: used the first of ${imgs.length}.` : '';
+        say(`Found ${res.items.length} items! (${(res.elapsed_ms / 1000).toFixed(1)}s)${extra}`, { sound: 'appear', hold: extra ? 5000 : 3500 });
         return;
       }
       const res = await scanApi({ images: imgs, hint: live.current.hint, source: src });
@@ -260,6 +274,8 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     setGeo(null);
     setHint('');
     setPlace('');
+    setCategory('');
+    setTagsText('');
     setCaught(false);
     setSource('camera');
     camRef.current?.setPaused(false);
@@ -273,7 +289,8 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   // ------------------------------------------------------------- save
   const save = async () => {
     if (!preview) return;
-    const { card, best_frame: bf } = preview;
+    const { card: aiCard, best_frame: bf } = preview;
+    const card = withUser(aiCard);
     const image = frames[bf] || frames[0];
     try {
       const thumb = await Media.makeThumb(image).catch(() => image);
@@ -301,7 +318,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
       for (const it of picked) { // one at a time so card numbers follow the order on screen
         const thumb = await Media.makeThumb(it.crop).catch(() => it.crop);
         await create.mutateAsync({
-          card: it.card, image: it.crop, thumb, source, currency: room.currency,
+          card: withUser(it.card), image: it.crop, thumb, source, currency: room.currency,
           location: { place: place.trim() || it.card.location_guess, ...(geo || {}) },
         });
         saved++;
@@ -337,15 +354,20 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
       <div className="panel scan-input">
         <div className="panel-head">
           <h2 className="panel-title">1. VIEWFINDER</h2>
-          <div className="mode-toggle" role="group" aria-label="Snap mode">
-            <button className={`mode${mode === 'auto' ? ' active' : ''}`} onClick={() => setMode('auto')} title="Snap automatically when an item is locked">AUTO SNAP</button>
-            <button className={`mode${mode === 'manual' ? ' active' : ''}`} onClick={() => setMode('manual')} title="Take shots yourself (multiple angles)">MANUAL</button>
-            <button className={`mode${roomMode ? ' active' : ''}`} onClick={toggleRoom} aria-pressed={roomMode} title="One photo of a shelf, drawer or room: a card for every item in it">ROOM</button>
+          <div className="head-modes">
+            <div className="mode-toggle" role="group" aria-label="Snap mode" title="How the camera takes the picture">
+              <button className={`mode${mode === 'auto' ? ' active' : ''}`} onClick={() => setMode('auto')} title="AUTO SNAP: hold an item steady and the camera takes the picture and scans it by itself">AUTO SNAP</button>
+              <button className={`mode${mode === 'manual' ? ' active' : ''}`} onClick={() => setMode('manual')} title="MANUAL: you press SNAP for each angle (up to 6), then SCAN">MANUAL</button>
+            </div>
+            <div className="mode-toggle" role="group" aria-label="Room mode">
+              <button className={`mode${roomMode ? ' active' : ''}`} onClick={toggleRoom} aria-pressed={roomMode} title="ROOM: scan one photo of a shelf, drawer or table and get a card for every item in it (use MANUAL or upload a photo). Off = one item per scan">ROOM</button>
+            </div>
           </div>
         </div>
 
         <div
           className={`viewfinder${hover ? ' hover' : ''}`}
+          title="Live camera. Show an item to scan it, or drop a photo or video here"
           onDragEnter={(e) => { e.preventDefault(); setHover(true); }}
           onDragOver={(e) => { e.preventDefault(); setHover(true); }}
           onDragLeave={() => setHover(false)}
@@ -356,7 +378,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
           <canvas ref={overlayRef} className="overlay" />
           <div className="vf-frame" aria-hidden="true" />
           {flash > 0 && <div className="vf-flash" key={flash} />}
-          <div className={`vf-status ${vfStatus.cls}`}><i /><span>{vfStatus.text}</span></div>
+          <div className={`vf-status ${vfStatus.cls}`} title="What the camera is doing right now"><i /><span>{vfStatus.text}</span></div>
           {usingCamera && !camOk && (
             <div className="dropzone-idle">
               <div className="pixel-arrow" aria-hidden="true">▼</div>
@@ -370,8 +392,8 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
         </div>
 
         <div className="control-row">
-          <button className="btn btn-accent snap-btn" onClick={snapNow} disabled={!camActive || scanning || !usingCamera} title="Space">● SNAP</button>
-          <div className="frames">
+          <button className="btn btn-accent snap-btn" onClick={snapNow} disabled={!camActive || scanning || !usingCamera} title="Take the picture now (Space). In MANUAL mode, snap several angles of the same item, then press SCAN">● SNAP</button>
+          <div className="frames" title="Pictures that will be scanned (click ✕ on one to remove it)">
             {frames.map((f, i) => (
               <div className="frame" key={`${i}-${f.length}`}>
                 <img src={f} alt={`shot ${i + 1}`} />
@@ -387,30 +409,41 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
             )}
           </div>
           <div className="upload-group">
-            <button className="btn btn-small" onClick={() => { Sound.play('click'); photoInput.current?.click(); }}>⇪ PHOTO</button>
-            <button className="btn btn-small" onClick={() => { Sound.play('click'); videoInput.current?.click(); }}>⇪ VIDEO</button>
-            {!usingCamera && <button className="btn btn-small" onClick={backToCamera}>◉ CAMERA</button>}
+            <button className="btn btn-small" onClick={() => { Sound.play('click'); photoInput.current?.click(); }} title="Upload one or more photos of the item (JPG, PNG, WEBP)">⇪ PHOTO</button>
+            <button className="btn btn-small" onClick={() => { Sound.play('click'); videoInput.current?.click(); }} title="Upload a short video; the app takes 4 frames from it">⇪ VIDEO</button>
+            {!usingCamera && <button className="btn btn-small" onClick={backToCamera} title="Drop the uploaded pictures and use the live camera">◉ CAMERA</button>}
           </div>
         </div>
         <input ref={photoInput} type="file" accept="image/*" multiple hidden onChange={(e) => { void addFiles(e.target.files || []); e.target.value = ''; }} />
         <input ref={videoInput} type="file" accept="video/*" hidden onChange={(e) => { void addFiles(e.target.files || []); e.target.value = ''; }} />
 
         <div className="field-row">
-          <label className="field">
+          <label className="field" title="Anything the picture cannot show (age, flaws, accessories). The AI reads it with the photo">
             <span>NOTE FOR THE AI <em>(optional)</em></span>
             <input value={hint} onChange={(e) => setHint(e.target.value)} maxLength={300} placeholder="e.g. bought 2022, minor scratch" />
           </label>
-          <label className="field">
+          <label className="field" title="Saved as the item's last seen place. Leave empty and the AI guesses from the background">
             <span>WHERE IS IT NOW? <em>(the AI will guess)</em></span>
             <input value={place} onChange={(e) => setPlace(e.target.value)} maxLength={80} placeholder="e.g. lemari kamar, rak 2" />
           </label>
-          <button className="btn btn-primary scan-btn" disabled={!frames.length || scanning} onClick={() => runScan(frames, source)}>▶ SCAN</button>
+          <button className="btn btn-primary scan-btn" disabled={!frames.length || scanning} onClick={() => runScan(frames, source)} title="Send the pictures to the AI and make the card">▶ SCAN</button>
+        </div>
+
+        <div className="field-row two">
+          <label className="field" title="Optional. Your own category for the card, e.g. Laptop or Power tool. It replaces the AI's guess (in room mode it applies to every item)">
+            <span>CATEGORY <em>(optional)</em></span>
+            <input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={60} placeholder="e.g. Laptop, Power tool" />
+          </label>
+          <label className="field" title="Optional. Comma-separated tags, e.g. work, garage. They are added to the AI's tags (max 6) and are searchable">
+            <span>TAGS <em>(optional, comma separated)</em></span>
+            <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} maxLength={120} placeholder="e.g. work, garage" />
+          </label>
         </div>
       </div>
 
       <div className="panel scan-output" ref={stageRef}>
         <h2 className="panel-title">2. CARD</h2>
-        <div className="card-stage">
+        <div className="card-stage" title="Your scanned card appears here. Nothing is saved until you press SAVE">
           {scanning ? (
             <Scanner cover={frames[0]} />
           ) : room ? (
@@ -419,17 +452,18 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
                 <label className={`room-pick${it.on ? ' on' : ''}`} key={i}>
                   <input
                     type="checkbox"
+                    title="Tick to save this item"
                     checked={it.on}
                     onChange={() => setRoom({ ...room, items: room.items.map((x, k) => (k === i ? { ...x, on: !x.on } : x)) })}
                   />
-                  <TradingCard item={{ ...it.card, currency: room.currency }} image={it.crop} mini />
+                  <TradingCard item={{ ...withUser(it.card), currency: room.currency }} image={it.crop} mini />
                 </label>
               ))}
             </div>
           ) : preview ? (
             <div className="reveal" key={preview.elapsed_ms}>
               <TradingCard
-                item={{ ...preview.card, currency: preview.currency }}
+                item={{ ...withUser(preview.card), currency: preview.currency }}
                 image={frames[preview.best_frame] || frames[0] || null}
                 place={place.trim() || preview.card.location_guess}
                 className={caught ? 'caught' : ''}
@@ -441,18 +475,18 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
         </div>
         {room && !scanning && (
           <div className="result-actions">
-            <button className="btn btn-primary" onClick={saveRoom} disabled={create.isPending || caught || !room.items.some((i) => i.on)}>
+            <button className="btn btn-primary" onClick={saveRoom} disabled={create.isPending || caught || !room.items.some((i) => i.on)} title="Save the ticked cards to your collection, each with its own cropped picture">
               ★ SAVE {room.items.filter((i) => i.on).length} TO DEX
             </button>
-            <button className="btn" onClick={() => runScan(frames, source)}>↻ RESCAN</button>
-            <button className="btn btn-danger" onClick={discard}>✕ DISCARD</button>
+            <button className="btn" onClick={() => runScan(frames, source)} title="Ask the AI again with the same pictures">↻ RESCAN</button>
+            <button className="btn btn-danger" onClick={discard} title="Throw this result away">✕ DISCARD</button>
           </div>
         )}
         {preview && !scanning && (
           <div className="result-actions">
-            <button className="btn btn-primary" onClick={save} disabled={create.isPending || caught}>★ SAVE TO DEX</button>
-            <button className="btn" onClick={() => runScan(frames, source)}>↻ RESCAN</button>
-            <button className="btn btn-danger" onClick={discard}>✕ DISCARD</button>
+            <button className="btn btn-primary" onClick={save} disabled={create.isPending || caught} title="Add this card to your collection">★ SAVE TO DEX</button>
+            <button className="btn" onClick={() => runScan(frames, source)} title="Ask the AI again with the same pictures">↻ RESCAN</button>
+            <button className="btn btn-danger" onClick={discard} title="Throw this card away">✕ DISCARD</button>
           </div>
         )}
       </div>

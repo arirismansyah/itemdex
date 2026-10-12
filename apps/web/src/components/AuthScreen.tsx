@@ -31,18 +31,18 @@ export function AuthScreen() {
       <form className="panel auth-form" onSubmit={submit}>
         <h1>ITEMDEX</h1>
         <small>{mode === 'login' ? 'SIGN IN TO YOUR DEX' : 'CREATE YOUR TRAINER ACCOUNT'}</small>
-        {mode === 'register' && <label className="field"><span>NAME</span><input name="name" maxLength={60} autoComplete="name" /></label>}
-        <label className="field"><span>EMAIL</span><input name="email" type="email" required autoComplete="email" /></label>
+        {mode === 'register' && <label className="field"><span>NAME</span><input name="name" title="Shown to your household members" maxLength={60} autoComplete="name" /></label>}
+        <label className="field"><span>EMAIL</span><input name="email" title="Your sign-in email" type="email" required autoComplete="email" /></label>
         <label className="field">
           <span>PASSWORD {mode === 'register' && <em>(8+ characters)</em>}</span>
-          <input name="password" type="password" required minLength={mode === 'register' ? 8 : 1} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+          <input name="password" title="At least 8 characters when creating an account" type="password" required minLength={mode === 'register' ? 8 : 1} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
         </label>
         {mode === 'register' && (
-          <label className="field"><span>INVITE CODE <em>(join a household, or leave empty to start your own)</em></span><input name="invite_code" maxLength={40} /></label>
+          <label className="field"><span>INVITE CODE <em>(join a household, or leave empty to start your own)</em></span><input name="invite_code" title="Code from someone in the household you want to join" maxLength={40} /></label>
         )}
         {error && <p className="auth-error" role="alert">{error}</p>}
-        <button className="btn btn-primary" disabled={busy}>{busy ? '...' : mode === 'login' ? '▶ SIGN IN' : '▶ CREATE ACCOUNT'}</button>
-        <button type="button" className="btn btn-small" onClick={() => { setError(''); setMode(mode === 'login' ? 'register' : 'login'); }}>
+        <button className="btn btn-primary" disabled={busy} title={mode === 'login' ? 'Sign in' : 'Create the account'}>{busy ? '...' : mode === 'login' ? '▶ SIGN IN' : '▶ CREATE ACCOUNT'}</button>
+        <button type="button" className="btn btn-small" title="Switch between signing in and creating an account" onClick={() => { setError(''); setMode(mode === 'login' ? 'register' : 'login'); }}>
           {mode === 'login' ? 'NEW HERE? CREATE ACCOUNT' : 'HAVE AN ACCOUNT? SIGN IN'}
         </button>
       </form>
@@ -72,11 +72,12 @@ function HouseholdPanel({ onLogout }: { onLogout: () => void }) {
           <p className="small">INVITE CODE</p>
           <button
             className="btn btn-small"
+            title="Copy the code and send it to someone so they can join this household"
             onClick={() => navigator.clipboard.writeText(h.invite_code).then(() => say('Invite code copied!', { sound: 'select' }), () => say(h.invite_code))}
           >{h.invite_code} ⧉</button>
         </>
       )}
-      <button className="btn btn-small btn-danger" onClick={onLogout}>SIGN OUT</button>
+      <button className="btn btn-small btn-danger" onClick={onLogout} title="Sign out of this browser">SIGN OUT</button>
     </div>
   );
 }

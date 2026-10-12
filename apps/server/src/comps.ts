@@ -1,7 +1,7 @@
 // Price check on Shopee Indonesia: reads the public search page with a headless browser (Playwright),
 // logged in with a session the user saves once through the app (Shopee blocks anonymous browsers).
 // Needs `npx playwright-core install chromium`. Without a saved session the feature is off and
-// values stay Gemma's estimates.
+// values stay the AI estimates.
 
 import fs from 'node:fs';
 import path from 'node:path';

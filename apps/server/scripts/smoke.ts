@@ -1,4 +1,4 @@
-// End-to-end smoke test against a real PostgreSQL and a fake Gemma:
+// End-to-end smoke test against a real PostgreSQL and a fake AI server:
 //   DATABASE_URL=postgres://... npm run smoke -w @itemdex/server
 // Use an empty scratch database: it creates items and accounts.
 
@@ -128,7 +128,7 @@ assert.equal(fromAnthropicResponse({ content: [{ type: 'text', text: 'ok' }] }),
   assert.equal((await call('PUT', '/settings/ai', { base_url: llmBase, model: 'fake' })).body.has_key, true, 'empty key keeps the saved one');
   assert.equal((await call('PUT', '/settings/ai', { base_url: llmBase, model: 'fake', clear_key: true })).body.has_key, false);
 
-  // Shopee not connected: status says so and the price check refuses (value stays Gemma's)
+  // Shopee not connected: status says so and the price check refuses (value stays the AI estimate)
   assert.equal((await call('GET', '/shopee')).body.connected, false);
   assert.equal((await call('POST', `/items/${id}/comps`)).status, 409);
 

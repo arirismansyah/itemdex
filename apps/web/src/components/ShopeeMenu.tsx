@@ -28,13 +28,13 @@ export function ShopeeMenu() {
           <p className="small">
             {s?.state === 'waiting' ? 'Waiting for you to log in in the new window...'
               : s?.connected ? 'Connected. Items priced in IDR can be checked against Shopee listings.'
-                : 'Not connected. Values stay Gemma\'s estimates.'}
+                : 'Not connected. Values stay the AI estimates.'}
           </p>
           {s && !s.available && <p className="muted small">Connect from the computer that runs ITEMDEX (localhost).</p>}
           {s?.available && s.state !== 'waiting' && (
-            <button className="btn btn-small btn-primary" onClick={() => run(shopee.connect)}>{s.connected ? '↻ RECONNECT' : '▶ LOG IN TO SHOPEE'}</button>
+            <button className="btn btn-small btn-primary" onClick={() => run(shopee.connect)} title="Opens a browser window: log in to Shopee yourself. Only the session is saved, never your password">{s.connected ? '↻ RECONNECT' : '▶ LOG IN TO SHOPEE'}</button>
           )}
-          {s?.connected && <button className="btn btn-small btn-danger" onClick={() => run(shopee.disconnect)}>DISCONNECT</button>}
+          {s?.connected && <button className="btn btn-small btn-danger" onClick={() => run(shopee.disconnect)} title="Delete the saved Shopee session">DISCONNECT</button>}
           <p className="muted small">Only the browser session is saved on this computer, never your password. Use a spare account if you can: Shopee may limit automated use.</p>
         </div>
       )}

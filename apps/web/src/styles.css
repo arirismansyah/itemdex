@@ -761,6 +761,8 @@ table.data td { padding: 2px 0; }
 .auth-form h1 { margin: 0; font-family: var(--pixel); color: var(--accent); }
 .auth-form small { font-family: var(--pixel); font-size: 8px; color: var(--muted); }
 .auth-form input { width: 100%; }
+.head-modes { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.field-row.two { grid-template-columns: 1fr 1fr; margin-top: 12px; }
 .ai-panel { min-width: 300px; }
 .ok { color: var(--green); }
 .auth-error { color: var(--red); margin: 0; }
@@ -771,6 +773,8 @@ table.data td { padding: 2px 0; }
 }
 
 @media (max-width: 900px) {
+  .field-row.two { grid-template-columns: 1fr; }
+  .head-modes { gap: 10px; }
   /* Let the page scroll naturally instead of fixed-height panes. */
   body { overflow-x: hidden; overflow-y: auto; font-size: 18px; }
   body.modal-open { overflow: hidden; }

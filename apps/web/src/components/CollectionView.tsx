@@ -17,6 +17,12 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+const FLAG_HELP: Record<Flag, string> = {
+  lent: 'Items you have lent to someone',
+  overdue: 'Lent items that are past their return date',
+  sell_now: 'Items whose price is at its highest and up 10%+ since first recorded',
+  warranty: 'Items whose warranty ends within 60 days',
+};
 const FLAG_LABEL: Record<Flag, string> = { lent: 'LENT OUT', overdue: 'OVERDUE', sell_now: 'SELL NOW', warranty: 'WARRANTY ≤60D' };
 
 export function CollectionView({ active, onOpen, onGoScan }: {
@@ -81,7 +87,7 @@ export function CollectionView({ active, onOpen, onGoScan }: {
 
   return (
     <section className={`view view-collection${active ? ' active' : ''}`} aria-hidden={!active}>
-      <div className="toolbar panel">
+      <div className="toolbar panel" title="Search and filter your collection">
         <label className="search">
           <span aria-hidden="true">?</span>
           <input
@@ -89,6 +95,7 @@ export function CollectionView({ active, onOpen, onGoScan }: {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="SEARCH NAME, TAG, OR WHERE IT IS..."
             aria-label="Search"
+            title="Search by name, brand, tag or where the item is"
             type="search"
             onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) void runAsk(); }}
           />
@@ -96,7 +103,7 @@ export function CollectionView({ active, onOpen, onGoScan }: {
         <button className="btn btn-small" onClick={runAsk} disabled={asking || !search.trim()} title="Ask in plain words, e.g. 'what in the garage is worth over 50k?' (Shift+Enter)">
           {asking ? '...' : '✦ ASK'}
         </button>
-        <select value={sort} onChange={(e) => { Sound.play('click'); setSort(e.target.value as Sort); }} aria-label="Sort">
+        <select value={sort} onChange={(e) => { Sound.play('click'); setSort(e.target.value as Sort); }} aria-label="Sort" title="Change the order of the cards">
           <option value="new">NEWEST</option>
           <option value="value">VALUE ▼</option>
           <option value="rarity">RARITY ▼</option>
@@ -109,6 +116,7 @@ export function CollectionView({ active, onOpen, onGoScan }: {
               key={t}
               className={`chip${t === type ? ' active' : ''}${t !== 'ALL' ? ` type-${t}` : ''}`}
               onClick={() => { Sound.play('click'); setType(t); }}
+              title={t === 'ALL' ? 'Show every type' : `Only ${TYPE_META[t].label} items`}
             >
               {t === 'ALL' ? 'ALL' : `${TYPE_META[t].icon} ${TYPE_META[t].label}`}
               <small>{t === 'ALL' ? total : typeCounts[t]}</small>
@@ -117,7 +125,7 @@ export function CollectionView({ active, onOpen, onGoScan }: {
         </div>
         <div className="type-filter" hidden={!!asked}>
           {FLAGS.filter((f) => stats.data?.flags[f] || f === flag).map((f) => (
-            <button key={f} className={`chip flag-${f}${f === flag ? ' active' : ''}`} onClick={() => { Sound.play('click'); setFlag(f === flag ? '' : f); }}>
+            <button key={f} className={`chip flag-${f}${f === flag ? ' active' : ''}`} onClick={() => { Sound.play('click'); setFlag(f === flag ? '' : f); }} title={FLAG_HELP[f]}>
               {FLAG_LABEL[f]}<small>{stats.data?.flags[f] ?? 0}</small>
             </button>
           ))}
@@ -132,7 +140,7 @@ export function CollectionView({ active, onOpen, onGoScan }: {
         <div className="ask-banner panel">
           <span>✦ ASK: “{asked.text}”</span>
           <b>{matched} MATCH{matched === 1 ? '' : 'ES'}</b>
-          <button className="btn btn-small" onClick={() => { Sound.play('click'); setAsked(null); }}>✕ CLEAR</button>
+          <button className="btn btn-small" onClick={() => { Sound.play('click'); setAsked(null); }} title="Remove the ASK filter and go back to the normal search">✕ CLEAR</button>
         </div>
       )}
 
@@ -140,10 +148,10 @@ export function CollectionView({ active, onOpen, onGoScan }: {
         <div className="empty">
           <div className="empty-ball" aria-hidden="true" />
           <p>YOUR ITEMDEX IS EMPTY</p>
-          <button className="btn btn-primary" onClick={onGoScan}>▶ GO CATCH SOME ITEMS</button>
+          <button className="btn btn-primary" onClick={onGoScan} title="Go to the SCAN tab">▶ GO CATCH SOME ITEMS</button>
         </div>
       ) : (
-        <div className="grid">
+        <div className="grid" title="Click a card to open it">
           {items.isError && <p className="no-match">COULD NOT LOAD: {(items.error as Error).message}</p>}
           {items.isSuccess && !list.length && <p className="no-match">NO ITEMS MATCH YOUR SEARCH.</p>}
           {list.map((i) => (

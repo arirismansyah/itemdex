@@ -86,14 +86,14 @@ function TradingCardInner({ item, image, mini = false, place, className = '', on
         <div className="card-top"><span className="card-sub">{sub || 'BASIC ITEM'}</span></div>
         <div className="card-title">
           <h3>{item.name}</h3>
-          <span className="card-hp"><small>HP</small>{item.condition.score}</span>
+          <span className="card-hp" title="Condition score, 0 to 100"><small>HP</small>{item.condition.score}</span>
           <span className="type-orb" title={t.label}>{t.icon}</span>
         </div>
         <div className="card-art">
           {image
             ? <img src={image} alt="" draggable={false} loading={mini ? 'lazy' : 'eager'} decoding="async" />
             : <div className="no-art">?</div>}
-          <span className="art-badge">{item.size_class}</span>
+          <span className="art-badge" title="Size class, from the longest side">{item.size_class}</span>
           {(item.sell_now || item.lent) && (
             <span className="art-flags">
               {item.sell_now && <b className="flag-sell">SELL NOW</b>}
@@ -101,12 +101,12 @@ function TradingCardInner({ item, image, mini = false, place, className = '', on
             </span>
           )}
         </div>
-        <div className="card-strip">
+        <div className="card-strip" title="Collection number, size, weight and date added">
           NO.{pad(item.number)} · {dims(item.dimensions)} · {weight(item.weight_g)} · {item.created_at ? date(item.created_at) : 'NEW!'}
         </div>
         <div className="card-moves">
           {item.abilities.map((a, i) => (
-            <div className="move" key={i}>
+            <div className="move" key={i} title={`${a.name}: a playful move based on what the item does (damage ${a.power})`}>
               <div className="move-cost">
                 {Array.from({ length: i + 1 }, (_, k) => <span className="energy" key={k}>{t.icon}</span>)}
               </div>
@@ -119,14 +119,14 @@ function TradingCardInner({ item, image, mini = false, place, className = '', on
           ))}
         </div>
         <div className="card-stats">
-          <div><span>VALUE</span><b>{money(item.value.typical, { currency: item.currency })}</b></div>
-          <div><span>COND.</span><b>{item.condition.label}</b></div>
-          <div><span>LAST SEEN</span><b className="trunc">{seen || '???'}</b></div>
+          <div title="Estimated second-hand resale value"><span>VALUE</span><b>{money(item.value.typical, { currency: item.currency })}</b></div>
+          <div title="Condition of the item"><span>COND.</span><b>{item.condition.label}</b></div>
+          <div title="Where the item was last seen"><span>LAST SEEN</span><b className="trunc">{seen || '???'}</b></div>
         </div>
         {!mini && <p className="card-flavor">{item.description}</p>}
         <div className="card-foot">
           <span>ITEMDEX · {t.label}</span>
-          <span className="stars">{'★'.repeat(stars)}{'☆'.repeat(5 - stars)}</span>
+          <span className="stars" title="Rarity: 1 to 5 stars">{'★'.repeat(stars)}{'☆'.repeat(5 - stars)}</span>
           <span>{item.rarity}</span>
         </div>
       </div>

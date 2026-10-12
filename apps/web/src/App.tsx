@@ -67,7 +67,7 @@ export function App() {
       <div className="crt" aria-hidden="true" />
 
       <header className="topbar">
-        <div className="logo">
+        <div className="logo" title="ITEMDEX: catalog your belongings as collectible cards">
           <span className="logo-ball" aria-hidden="true" />
           <div>
             <h1>ITEMDEX</h1>
@@ -76,13 +76,13 @@ export function App() {
         </div>
 
         <nav className="tabs" aria-label="Views">
-          <button className={`tab${view === 'scan' ? ' active' : ''}`} onClick={() => go('scan')} aria-current={view === 'scan'}>SCAN</button>
-          <button className={`tab${view === 'collection' ? ' active' : ''}`} onClick={() => go('collection')} aria-current={view === 'collection'}>COLLECTION</button>
+          <button className={`tab${view === 'scan' ? ' active' : ''}`} onClick={() => go('scan')} aria-current={view === 'scan'} title="Scan new items with the camera or by uploading photos">SCAN</button>
+          <button className={`tab${view === 'collection' ? ' active' : ''}`} onClick={() => go('collection')} aria-current={view === 'collection'} title="Browse, search and manage your saved cards">COLLECTION</button>
         </nav>
 
         <div className="hud">
-          <div className="hud-stat"><span>ITEMS</span><b>{stats.data?.total ?? 0}</b></div>
-          <div className="hud-stat"><span>TOTAL VALUE</span><b>{money(stats.data?.total_value ?? 0)}</b></div>
+          <div className="hud-stat" title="Number of items in your collection"><span>ITEMS</span><b>{stats.data?.total ?? 0}</b></div>
+          <div className="hud-stat" title="Estimated resale value of everything in your collection (only items priced in the service currency are added)"><span>TOTAL VALUE</span><b>{money(stats.data?.total_value ?? 0)}</b></div>
           <div className={`hud-led ${led[0]}`} title={h ? `Model: ${h.model || 'not set'}` : 'AI status'}><i /><span>{led[1]}</span></div>
           <select
             className="locale-select"
@@ -114,8 +114,8 @@ export function App() {
 
       {/* Phone navigation */}
       <nav className="bottom-nav" aria-label="Views">
-        <button className={view === 'scan' ? 'active' : ''} onClick={() => go('scan')}><b>◉</b>SCAN</button>
-        <button className={view === 'collection' ? 'active' : ''} onClick={() => go('collection')}><b>▦</b>DEX</button>
+        <button className={view === 'scan' ? 'active' : ''} onClick={() => go('scan')} title="Scan new items"><b>◉</b>SCAN</button>
+        <button className={view === 'collection' ? 'active' : ''} onClick={() => go('collection')} title="Your collection"><b>▦</b>DEX</button>
       </nav>
 
       {detail && <DetailModal key={detail.id} initial={detail} onClose={closeDetail} />}
