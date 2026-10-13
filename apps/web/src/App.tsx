@@ -68,10 +68,10 @@ export function App() {
 
       <header className="topbar">
         <div className="logo" title="ITEMDEX: catalog your belongings as collectible cards">
-          <span className="logo-ball" aria-hidden="true" />
+          <span className="logo-mark" aria-hidden="true" />
           <div>
             <h1>ITEMDEX</h1>
-            <small>GOTTA CATALOG &apos;EM ALL</small>
+            <small>EVERY ITEM, A CARD</small>
           </div>
         </div>
 

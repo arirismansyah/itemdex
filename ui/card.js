@@ -129,7 +129,7 @@ const Card = (() => {
   function cardBack() {
     return `
       <article class="card card-back">
-        <div class="back-ring"><div class="back-ball"></div></div>
+        <div class="back-ring"><div class="back-mark"></div></div>
         <p>ITEMDEX</p>
       </article>`;
   }

@@ -146,7 +146,7 @@ export function CollectionView({ active, onOpen, onGoScan }: {
 
       {stats.data && total === 0 ? (
         <div className="empty">
-          <div className="empty-ball" aria-hidden="true" />
+          <div className="empty-mark" aria-hidden="true" />
           <p>YOUR ITEMDEX IS EMPTY</p>
           <button className="btn btn-primary" onClick={onGoScan} title="Go to the SCAN tab">▶ GO CATCH SOME ITEMS</button>
         </div>

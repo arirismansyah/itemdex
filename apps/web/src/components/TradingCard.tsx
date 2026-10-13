@@ -140,7 +140,7 @@ export const TradingCard = memo(forwardRef(TradingCardInner));
 export function CardBack() {
   return (
     <article className="card card-back" aria-hidden="true">
-      <div className="back-ring"><div className="back-ball" /></div>
+      <div className="back-ring"><div className="back-mark" /></div>
       <p>ITEMDEX</p>
     </article>
   );
