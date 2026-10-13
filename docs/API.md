@@ -37,6 +37,7 @@ Yang disediakan service:
 | Simpan / lihat / cari / edit / hapus koleksi | `/items` | < 50 ms |
 | Ringkasan koleksi (jumlah, total nilai, per tipe) | `GET /stats` | < 20 ms |
 | Lokasi terakhir barang (nama tempat + GPS + alamat) | `PUT /items/{id}/location` | < 1 s |
+| Cek harga pasar dari listing bekas di web (opsional, SearXNG) | `POST /price-check`, `POST /items/{id}/price-check` | ~4–5 s |
 
 ---
 
@@ -73,6 +74,10 @@ Konfigurasi lewat `.env` (lihat `.env.example`):
 | `CURRENCY` / `MARKET` | `IDR` / `Indonesian` | Mata uang & pasar acuan estimasi harga |
 | `LLM_TIMEOUT_MS` | `120000` | Batas waktu panggilan `/scan` |
 | `REVERSE_GEOCODE` | `true` | Koordinat → alamat via OpenStreetMap Nominatim (`false` = matikan; koordinat tidak dikirim keluar) |
+| `SEARCH_URL` | kosong (fitur mati) | URL SearXNG untuk cek harga pasar, mis. `http://127.0.0.1:8888` (lihat 4.4) |
+| `SEARCH_AUTOSTART` | `true` | Kalau `SEARCH_URL` lokal dan belum jalan, service menyalakan SearXNG (`tools/searxng`) sendiri dan mematikannya saat service berhenti |
+| `SEARCH_LANGUAGE` | `id-ID` | Bahasa/region hasil pencarian |
+| `SEARCH_TIMEOUT_MS` | `10000` | Batas waktu satu pencarian |
 
 Contoh mode "API untuk tim" (diakses dari HP/laptop lain di jaringan yang sama):
 
@@ -131,6 +136,7 @@ pernah berubah, jadi dikirim dengan `Cache-Control: immutable`.
 | `not_connected` | 409 | Shopee belum terhubung (cek harga) |
 | `no_comps` / `comps_error` | 404 / 502 | Tidak ada listing Shopee yang cocok / browser atau Shopee bermasalah |
 | `db_unavailable` | 503 | PostgreSQL tidak bisa dihubungi. Boleh retry |
+| `search_disabled` | 503 | Endpoint cek harga dipanggil padahal `SEARCH_URL` kosong. Sembunyikan fiturnya (cek `GET /meta`) |
 | `internal` | 500 | Bug di service |
 
 **Enum & limit** jangan di-hardcode. Ambil dari `GET /meta`:
@@ -239,6 +245,10 @@ service otomatis menambahkan `address` (alamat jalan).
 `thumb` opsional: versi kecil foto (sisi terpanjang ~360 px) untuk grid koleksi.
 Kalau tidak dikirim, `thumb_url` menyajikan foto penuh. Mengirim thumbnail membuat
 scroll koleksi jauh lebih ringan di HP.
+
+Kalau server punya `SEARCH_URL`, kirim `"price_check": true` ke `/scan` untuk
+sekalian cek harga pasar (+~4 s, lihat 4.4). Untuk UI interaktif lebih enak
+menampilkan kartu dulu lalu memanggil `POST /price-check` di background.
 
 ### 4.2 Kamera live dengan auto-snap (opsional)
 
@@ -402,6 +412,96 @@ dan `POST /auth/login` `{ email, password }` mengembalikan `{ token, user, house
 dengan kode, akun bergabung dan melihat koleksi yang sama. `GET /auth/me` memuat `invite_code` household,
 `POST /auth/logout` mengakhiri sesi. Belum ada pembatasan percobaan login: pasang rate limit sebelum dipublikasikan.
 
+### 4.5 Cek harga pasar dari web (opsional)
+
+Tanpa fitur ini, `value` murni tebakan AI dari pengetahuannya. Dengan fitur ini,
+service mencari listing barang **bekas** di web lalu mengoreksi harganya:
+
+```
+card (nama/brand/model) ──► SearXNG: "<brand model> bekas harga"
+                              │  hasil Tokopedia, OLX, Shopee, Carousell, ...
+                              ▼
+                 ambil harga "Rp ..." dari judul/cuplikan
+                              ▼
+       AI: listing mana yang BENAR-BENAR produk yang sama?
+       (buang aksesoris, sparepart, unit rusak, model/generasi lain)
+                              ▼
+   server: match hanya diterima kalau harganya memang ada di teks listing itu
+                              ▼
+        value baru (min/max/typical) + sources (link pembanding)
+```
+
+**Menyalakan** (tanpa Docker, butuh Python ≥ 3.10 dan git):
+
+```bash
+npm run search:setup   # sekali: install SearXNG ke tools/searxng (±160 MB)
+# di .env:
+SEARCH_URL=http://127.0.0.1:8888
+```
+
+Selesai. `npm run dev` / `npm start` otomatis menyalakan SearXNG bersama service
+dan mematikannya saat service berhenti. Kalau sudah ada SearXNG yang jalan di
+URL itu, service memakainya (tidak dimatikan). Di log service muncul baris
+`price search: ...`. Siap ±5 detik setelah start. `npm run search` tetap bisa
+dipakai untuk menjalankannya sendiri; matikan auto-start dengan `SEARCH_AUTOSTART=false`.
+
+**Kenapa tidak pakai instance SearXNG publik?** Sebagian besar instance publik
+mematikan format JSON (request `format=json` dibalas 403), membatasi/memblokir
+request otomatis, dan bisa mati sewaktu-waktu. Service yang memanggilnya terus
+akan cepat kena blokir. SearXNG lokal milik sendiri jauh lebih stabil.
+`SEARCH_URL` tetap bisa diarahkan ke SearXNG mana pun yang JSON-nya aktif,
+mis. instance tim di server bersama.
+
+[SearXNG](https://github.com/searxng/searxng) adalah metasearch open source
+(AGPL) yang kita host sendiri: gratis, tanpa API key. Dia meneruskan query ke
+Google/Bing/DuckDuckGo/dll. lalu menggabungkan hasilnya.
+
+Client cek dukungan lewat `GET /meta` → `features.price_check`.
+
+**Kartu yang belum disimpan:** `POST /price-check`
+
+```json
+// request
+{ "card": { "...": "objek card dari /scan" } }
+
+// response
+{
+  "value": {
+    "min": 3900000, "max": 4349000, "typical": 4100000, "new_price": 9000000,
+    "confidence": "HIGH",
+    "reasoning": "Harga bekas iPhone 11 64GB stabil di kisaran 4 jutaan.",
+    "sources": [
+      { "site": "olx.co.id", "price": 4000000, "title": "Iphone 11 di Jakarta Barat - OLX", "url": "https://..." },
+      { "site": "maujual.com", "price": 4100000, "title": "Jual Hp Apple iPhone 11 Bekas ...", "url": "https://..." }
+    ],
+    "checked_at": "2026-10-13T02:09:36.522Z"
+  },
+  "price_check": { "status": "grounded", "query": "Apple iPhone 11 bekas harga", "listings": 8, "used": 4, "elapsed_ms": 4565 }
+}
+```
+
+Ganti `card.value` dengan `value` dari response, lalu simpan seperti biasa
+(`POST /items`). `sources` dan `checked_at` ikut tersimpan.
+
+**Item yang sudah disimpan:** `POST /items/{id}/price-check` → `{ item, price_check }`.
+Item hanya di-update kalau `status` = `grounded`.
+
+| `price_check.status` | Arti | `value` |
+|---|---|---|
+| `grounded` | Ada listing yang cocok, harga dihitung dari situ | baru, ada `sources` |
+| `no_match` | Ada hasil, tapi tidak ada yang produk yang sama | tidak berubah |
+| `no_results` | Pencarian tidak menemukan listing berharga | tidak berubah |
+| `disabled` | `SEARCH_URL` kosong (hanya di `/scan` dengan `price_check: true`) | tidak berubah |
+| `error` | SearXNG mati/timeout, atau AI gagal. Detail di `price_check.error` | tidak berubah |
+
+`confidence` setelah cek: `HIGH` = 3+ listing cocok, `MEDIUM` = 1–2.
+
+**Batasan:**
+- Hanya membaca harga **Rupiah** (`Rp`/`IDR`, termasuk `4,5 juta`, `349 ribu`, `250k`).
+- **Kualitas harga mengikuti kualitas identifikasi.** Kalau AI salah mengenali model, yang dicari juga model yang salah. Sediakan edit brand/model, lalu cek ulang.
+- Harga diambil dari judul/cuplikan hasil pencarian, bukan dengan membuka halaman marketplace. Kadang hanya 1–2 listing yang cocok.
+- SearXNG men-scrape mesin pencari publik. Kalau terlalu sering dipakai, sebagian mesin bisa membatasi (rate limit/CAPTCHA). SearXNG otomatis memakai mesin lain, tapi hasil bisa berkurang. Untuk demo/hackathon aman. Untuk produksi, pertimbangkan API pencarian resmi.
+
 ---
 
 ## 5. Model data `Item`
@@ -531,6 +631,7 @@ Di HP, `localhost` = HP itu sendiri. Pakai IP laptop yang menjalankan service
 - **Penyimpanan** ada di PostgreSQL (data kartu, foto, thumbnail, riwayat lokasi). Beberapa instance service boleh memakai database yang sama; migrasi dikunci dengan advisory lock. Backup = `pg_dump`. Service sendiri stateless, jadi aman di-redeploy.
 - **Data versi lama (v0.1, file JSON):** `npm run db:import-legacy -- "<folder itemdex-data>"` (tanpa argumen = folder data app desktop lama).
 - **Foto di `/media`** bisa diakses tanpa key (nama file acak/UUID). Jangan simpan foto sensitif.
+- **Cek harga** mengirim nama/brand/model barang (bukan foto) ke SearXNG, yang meneruskannya ke mesin pencari publik. Jalankan SearXNG di mesin yang sama (`127.0.0.1`), jangan dibuka ke internet.
 - **Reverse geocoding** mengirim koordinat ke OpenStreetMap Nominatim (batas wajar ±1 request/detik). Matikan dengan `REVERSE_GEOCODE=false` kalau tidak boleh keluar.
 - **Akurasi:** nama/brand biasanya tepat untuk barang umum. Ukuran, berat, kondisi, dan harga adalah **estimasi**. Sediakan tombol edit di UI.
 
@@ -550,6 +651,8 @@ Di HP, `localhost` = HP itu sendiri. Pakai IP laptop yang menjalankan service
 | GET | `/api/v1/items/{id}` | ✓ | Detail |
 | PATCH/PUT | `/api/v1/items/{id}` | ✓ | Edit sebagian (merge) |
 | PUT | `/api/v1/items/{id}/location` | ✓ | Update lokasi terakhir |
+| POST | `/api/v1/price-check` | ✓ | Cek harga kartu (belum disimpan) ke listing web |
+| POST | `/api/v1/items/{id}/price-check` | ✓ | Cek ulang harga item tersimpan |
 | DELETE | `/api/v1/items/{id}` | ✓ | Hapus |
 | POST | `/api/v1/scan/room` | ✓ | 1 foto ruangan → kartu per barang (tidak disimpan) |
 | POST | `/api/v1/ask` | ✓ | Kalimat biasa → filter untuk `/items` |

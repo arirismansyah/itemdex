@@ -3,7 +3,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { PLATFORMS, type Item, type Listing, type Platform, type ValuePoint } from '@itemdex/shared';
 import {
-  makeListing, useLendItem, useReceipt, useReturnItem, useShopee, useVerifyPrice,
+  makeListing, useLendItem, useMeta, useReceipt, useRecheckPrice, useReturnItem, useShopee, useVerifyPrice,
 } from '../lib/api';
 import { say } from '../lib/dialog';
 import { ago, date, money } from '../lib/format';
@@ -33,9 +33,15 @@ function Sparkline({ points }: { points: ValuePoint[] }) {
 export function ValueBlock({ item }: { item: Item }) {
   const shopee = useShopee();
   const verify = useVerifyPrice();
+  const recheck = useRecheckPrice();
+  const priceOn = !!useMeta().data?.features?.price_check;
   const v = item.value;
   const cur = item.currency;
   const c = item.comps;
+  const web = v.sources || [];
+  const basis = web.length
+    ? `WEB · ${web.length} LISTING${web.length === 1 ? '' : 'S'}`
+    : c && v.reasoning.includes('Shopee') ? 'SHOPEE' : 'AI ESTIMATE';
 
   const check = async () => {
     try {
@@ -45,10 +51,24 @@ export function ValueBlock({ item }: { item: Item }) {
     } catch (err) { fail(err); }
   };
 
+  // Web search (SearXNG) check: the value changes only when listings of the same product were found.
+  const checkWeb = async () => {
+    try {
+      const { item: next, price_check: r } = await recheck.mutateAsync(item.id);
+      if (r.status === 'grounded') {
+        say(`Market check: ${r.used} matching listing(s). Typical ${money(next.value.typical, { currency: cur })}.`, { sound: 'select' });
+      } else if (r.status === 'error') {
+        say(`Price search failed: ${r.error || 'unknown error'}`, { sound: 'error' });
+      } else {
+        say(`No matching listings found for "${r.query}". Value unchanged.`, { sound: 'error' });
+      }
+    } catch (err) { fail(err); }
+  };
+
   return (
     <section className="info-sec value-sec" title="Estimated resale value and how it changed over time">
       <h4>
-        MARKET VALUE <em>({c && v.reasoning.includes('Shopee') ? 'SHOPEE' : 'AI ESTIMATE'} · {v.confidence} CONFIDENCE)</em>
+        MARKET VALUE <em>({basis} · {v.confidence} CONFIDENCE)</em>
         {item.sell_now && <b className="flag-sell inline">SELL NOW</b>}
       </h4>
       <p className="big-value">{money(v.typical, { compact: false, currency: cur })}</p>
@@ -72,6 +92,29 @@ export function ValueBlock({ item }: { item: Item }) {
             </li>
           ))}
         </ul>
+      )}
+      {web.length > 0 && (
+        <ul className="price-sources">
+          {web.map((src) => (
+            <li key={src.url}>
+              <a href={src.url} target="_blank" rel="noopener noreferrer" title={src.title}>
+                <span className="ps-site">{src.site}</span>
+                <span className="ps-title">{src.title}</span>
+                <b>{money(src.price, { currency: cur })}</b>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+      {(v.checked_at || priceOn) && (
+        <div className="price-foot">
+          {v.checked_at && <span className="muted">Checked {ago(v.checked_at)}</span>}
+          {priceOn && (
+            <button className="btn btn-small" onClick={checkWeb} disabled={recheck.isPending} title="Search the web for second-hand listings of this item and ground the value in them">
+              {recheck.isPending ? '⟳ CHECKING...' : '↻ CHECK MARKET PRICE'}
+            </button>
+          )}
+        </div>
       )}
       {cur === 'IDR' && shopee.data?.connected && (
         <button className="btn btn-small" onClick={check} disabled={verify.isPending} title="Search Shopee for this item and set the value from real listings (takes about 15 seconds)">

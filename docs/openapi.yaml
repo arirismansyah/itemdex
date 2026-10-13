@@ -52,6 +52,7 @@ paths:
                   version: { type: string, example: '2.0.0' }
                   llm: { type: boolean, description: AI server reachable, example: true }
                   db: { type: boolean, description: PostgreSQL reachable (ok = db), example: true }
+                  search: { type: boolean, nullable: true, description: 'SearXNG reachable; null when price check is not configured', example: true }
                   model: { type: string, example: gold }
                   items: { type: integer, example: 12 }
   /meta:
@@ -122,6 +123,12 @@ paths:
                   enum: [photo, video, camera]
                   description: '"video" tells the AI the images are frames of one clip'
                 locale: { $ref: '#/components/schemas/Locale' }
+                price_check:
+                  type: boolean
+                  default: false
+                  description: |
+                    Also check the value against web listings in the same call (+~4s).
+                    Interactive UIs should rather show the card first and call POST /price-check.
       responses:
         '200':
           description: Card preview
@@ -134,6 +141,36 @@ paths:
         '502': { $ref: '#/components/responses/LlmError' }
         '503': { $ref: '#/components/responses/Unavailable' }
         '504': { $ref: '#/components/responses/LlmTimeout' }
+  /price-check:
+    post:
+      operationId: checkPrice
+      tags: [AI]
+      summary: Check a card's value against second-hand web listings (~4s). Not saved.
+      description: |
+        Searches the web (self-hosted SearXNG) for used listings of the item, extracts Rupiah
+        prices from the results, lets the AI keep only listings of the same product, and
+        re-estimates the value from those prices. A match is kept only if its price literally
+        appears in that listing's text. Always returns a usable `value`: when nothing matches
+        or the search fails, it is the card's original value and `price_check.status` says why.
+        Requires SEARCH_URL on the server (see `GET /meta` -> `features.price_check`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card]
+              properties:
+                card: { $ref: '#/components/schemas/Card' }
+      responses:
+        '200':
+          description: Checked value
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceCheckResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /stats:
     get:
       operationId: getStats
@@ -669,6 +706,27 @@ paths:
       summary: End the session
       responses:
         '200': { description: OK }
+  /items/{id}/price-check:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: recheckItemPrice
+      tags: [Items]
+      summary: Re-check a saved item's value against web listings
+      description: The item's value (with sources) is updated only when status is "grounded".
+      responses:
+        '200':
+          description: Item (updated or unchanged) + check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+                  price_check: { $ref: '#/components/schemas/PriceCheck' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
 components:
   securitySchemes:
     ApiKeyHeader: { type: apiKey, in: header, name: X-API-Key }
@@ -693,7 +751,7 @@ components:
       description: AI did not answer in time
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Unavailable:
-      description: AI server unreachable / not configured (llm_unavailable), or database down (db_unavailable)
+      description: AI server unreachable / not configured (llm_unavailable), database down (db_unavailable), or price check not configured (search_disabled)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
     Error:
@@ -702,7 +760,7 @@ components:
         error: { type: string, example: Item not found }
         code:
           type: string
-          enum: [bad_request, unauthorized, forbidden, not_found, payload_too_large, llm_error, llm_unavailable, llm_timeout, db_unavailable, not_a_receipt, not_connected, no_comps, comps_error, browser_error, remote, auth_error, internal]
+          enum: [bad_request, unauthorized, forbidden, not_found, payload_too_large, llm_error, llm_unavailable, llm_timeout, db_unavailable, not_a_receipt, not_connected, no_comps, comps_error, browser_error, remote, auth_error, search_disabled, internal]
     Meta:
       type: object
       properties:
@@ -730,6 +788,10 @@ components:
             recommended_scan_image_side_px: { type: integer, example: 1024 }
             recommended_detect_image_side_px: { type: integer, example: 512 }
             thumb_side_px: { type: integer, example: 360 }
+        features:
+          type: object
+          properties:
+            price_check: { type: boolean, description: 'POST /price-check is available (SEARCH_URL set)' }
     Stats:
       type: object
       properties:
@@ -768,6 +830,7 @@ components:
         best_frame: { type: integer, description: 'Index in images[] that shows the item best', example: 0 }
         currency: { type: string, example: IDR, description: Currency of the card values }
         elapsed_ms: { type: integer, example: 4700 }
+        price_check: { $ref: '#/components/schemas/PriceCheck' }
     Locale:
       type: object
       description: Per-request override of the card language, currency and resale market (defaults come from CARD_LANGUAGE, CURRENCY, MARKET)
@@ -775,6 +838,43 @@ components:
         language: { type: string, example: English }
         currency: { type: string, example: USD }
         market: { type: string, example: US }
+    PriceCheck:
+      type: object
+      description: Present only when a price check ran
+      properties:
+        status:
+          type: string
+          enum: [grounded, no_match, no_results, disabled, error]
+          description: 'grounded = value now based on matching listings; otherwise value unchanged'
+        query: { type: string, example: Apple iPhone 11 bekas harga }
+        listings: { type: integer, description: Search results that contained a price, example: 8 }
+        used: { type: integer, description: Listings judged to be the same product, example: 4 }
+        elapsed_ms: { type: integer, example: 4500 }
+        error: { type: string, description: Only when status is error }
+    PriceCheckResult:
+      type: object
+      properties:
+        value: { $ref: '#/components/schemas/Value' }
+        price_check: { $ref: '#/components/schemas/PriceCheck' }
+    PriceSource:
+      type: object
+      properties:
+        title: { type: string, example: 'Jual Hp Apple iPhone 11 Bekas Hingga Rp 4.100.000' }
+        url: { type: string, format: uri }
+        site: { type: string, example: olx.co.id }
+        price: { type: integer, example: 4100000 }
+    Value:
+      type: object
+      description: 'Second-hand resale estimate (AI; grounded in web listings when "sources" is present)'
+      properties:
+        min: { type: integer, example: 3900000 }
+        max: { type: integer, example: 4349000 }
+        typical: { type: integer, example: 4100000 }
+        new_price: { type: integer, example: 9000000 }
+        confidence: { type: string, enum: [LOW, MEDIUM, HIGH], description: 'After a price check: HIGH = 3+ matching listings, MEDIUM = 1-2' }
+        reasoning: { type: string }
+        sources: { type: array, maxItems: 8, items: { $ref: '#/components/schemas/PriceSource' }, description: Listings the value is based on (absent if never checked) }
+        checked_at: { type: string, format: date-time, description: Time of the last successful price check }
     Card:
       type: object
       description: AI-generated card data. Text fields are in CARD_LANGUAGE, money in CURRENCY.
@@ -807,16 +907,7 @@ components:
             score: { type: integer, minimum: 0, maximum: 100, description: Shown as HP on the card }
             label: { type: string, enum: [MINT, EXCELLENT, GOOD, FAIR, POOR] }
             notes: { type: string }
-        value:
-          type: object
-          description: Second-hand resale estimate (AI, not a quote)
-          properties:
-            min: { type: integer, example: 4000000 }
-            max: { type: integer, example: 7000000 }
-            typical: { type: integer, example: 5500000 }
-            new_price: { type: integer, example: 15000000 }
-            confidence: { type: string, enum: [LOW, MEDIUM, HIGH] }
-            reasoning: { type: string }
+        value: { $ref: '#/components/schemas/Value' }
         rarity: { type: string, enum: [COMMON, UNCOMMON, RARE, EPIC, LEGENDARY] }
         abilities:
           type: array

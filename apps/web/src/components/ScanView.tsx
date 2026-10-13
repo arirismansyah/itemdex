@@ -1,10 +1,10 @@
 // SCAN tab: live viewfinder (auto/manual snap) or uploads -> AI -> card preview -> save.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Card, RoomResult, ScanResult, Source } from '@itemdex/shared';
-import { scan as scanApi, scanRoom, useCreateItem } from '../lib/api';
+import type { Card, PriceCheck, RoomResult, ScanResult, Source } from '@itemdex/shared';
+import { priceCheck, scan as scanApi, scanRoom, useCreateItem, useMeta } from '../lib/api';
 import { say } from '../lib/dialog';
-import { pad } from '../lib/format';
+import { money, pad } from '../lib/format';
 import { LiveCam, type LiveStatus, type Shot, type SnapMode } from '../lib/livecam';
 import * as Media from '../lib/media';
 import { Sound } from '../lib/sound';
@@ -25,6 +25,18 @@ const roomImage = (imgs: string[], src: Source) =>
   src === 'camera' && imgs.length > 1 ? imgs[1] : src === 'video' ? imgs[Math.floor(imgs.length / 2)] : imgs[0];
 
 const parseTags = (text: string) => text.split(',').map((t) => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean);
+
+type Pricing = { phase: 'idle' | 'checking' } | { phase: 'done'; check: PriceCheck };
+
+function pricingText(p: Pricing): string {
+  if (p.phase === 'checking') return '⟳ CHECKING MARKET PRICES...';
+  if (p.phase !== 'done') return '';
+  const c = p.check;
+  if (c.status === 'grounded') return `✓ PRICE FROM ${c.used} MATCHING LISTING${c.used === 1 ? '' : 'S'}`;
+  if (c.status === 'no_match' || c.status === 'no_results') return 'AI ESTIMATE · NO MATCHING LISTINGS FOUND';
+  if (c.status === 'error') return 'AI ESTIMATE · PRICE SEARCH FAILED';
+  return '';
+}
 
 type Geo = { lat: number; lng: number; accuracy_m: number | null; source: 'exif' | 'device' };
 
@@ -85,6 +97,9 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const [source, setSource] = useState<Source>('camera');
   const [geo, setGeo] = useState<Geo | null>(null);
   const [preview, setPreview] = useState<ScanResult | null>(null);
+  const [pricing, setPricing] = useState<Pricing>({ phase: 'idle' });
+  const previewRef = useRef<ScanResult | null>(null);
+  const priceOn = !!useMeta().data?.features?.price_check;
   const [scanning, setScanning] = useState(false);
   const [caught, setCaught] = useState(false);
   const [hint, setHint] = useState('');
@@ -105,8 +120,32 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     tags: [...new Set([...parseTags(tagsText), ...c.tags])].slice(0, 6),
   });
 
-  const live = useRef({ frames, source, scanning, geo, hint, roomMode });
-  live.current = { frames, source, scanning, geo, hint, roomMode };
+  const live = useRef({ frames, source, scanning, geo, hint, roomMode, priceOn });
+  live.current = { frames, source, scanning, geo, hint, roomMode, priceOn };
+
+  // All preview changes go through here so async price checks can tell if they are stale.
+  const showPreview = useCallback((p: ScanResult | null) => {
+    previewRef.current = p;
+    setPreview(p);
+    if (!p) setPricing({ phase: 'idle' });
+  }, []);
+
+  // Runs after the card is shown: grounds the value in web listings (~4s).
+  const checkMarket = useCallback(async (res: ScanResult) => {
+    setPricing({ phase: 'checking' });
+    try {
+      const { value, price_check: check } = await priceCheck(res.card);
+      if (previewRef.current !== res) return; // rescanned or discarded meanwhile
+      if (check.status === 'grounded') {
+        showPreview({ ...res, card: { ...res.card, value } });
+        say(`Market check: ${check.used} matching listing(s). Typical ${money(value.typical, { currency: res.currency })}.`, { sound: 'select' });
+      }
+      setPricing({ phase: 'done', check });
+    } catch (err) {
+      if (previewRef.current !== res) return;
+      setPricing({ phase: 'done', check: { status: 'error', query: '', listings: 0, used: 0, elapsed_ms: 0, error: (err as Error).message } });
+    }
+  }, [showPreview]);
 
   const usingCamera = source === 'camera';
   const camActive = status.phase !== 'off';
@@ -115,7 +154,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const runScan = useCallback(async (imgs: string[], src: Source) => {
     if (!imgs.length || live.current.scanning) return;
     setScanning(true);
-    setPreview(null);
+    showPreview(null);
     setRoom(null);
     camRef.current?.setPaused(true);
     Sound.play('select');
@@ -138,7 +177,8 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
         return;
       }
       const res = await scanApi({ images: imgs, hint: live.current.hint, source: src });
-      setPreview(res);
+      showPreview(res);
+      if (live.current.priceOn && res.card.is_item) void checkMarket(res);
       setPlace((p) => p || res.card.location_guess);
       const name = res.card.name.toUpperCase();
       if (res.card.is_item) say(`A wild ${name} appeared! (${(res.elapsed_ms / 1000).toFixed(1)}s)`, { sound: 'appear' });
@@ -152,7 +192,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     } finally {
       setScanning(false);
     }
-  }, []);
+  }, [showPreview, checkMarket]);
 
   // ------------------------------------------------------------- camera
   const startCamera = useCallback(async () => {
@@ -200,7 +240,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     const shot = cam.snap();
     setFlash((f) => f + 1);
     Sound.play('select');
-    setPreview(null);
+    showPreview(null);
     const prev = live.current.source === 'camera' ? live.current.frames : [];
     setSource('camera');
     if (cam.mode === 'auto') {
@@ -260,7 +300,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
       }
       setGeo(nextGeo);
       setFrames(next);
-      setPreview(null);
+      showPreview(null);
       Sound.play('select');
     } catch (err) {
       say((err as Error).message, { sound: 'error' });
@@ -269,7 +309,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
 
   const reset = useCallback(() => {
     setFrames([]);
-    setPreview(null);
+    showPreview(null);
     setRoom(null);
     setGeo(null);
     setHint('');
@@ -334,7 +374,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const toggleRoom = () => {
     Sound.play('click');
     setRoomMode((r) => !r);
-    setPreview(null);
+    showPreview(null);
     setRoom(null);
   };
 
@@ -442,7 +482,14 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
       </div>
 
       <div className="panel scan-output" ref={stageRef}>
-        <h2 className="panel-title">2. CARD</h2>
+        <div className="panel-head">
+          <h2 className="panel-title">2. CARD</h2>
+          {preview && !scanning && pricing.phase !== 'idle' && (
+            <span className={`price-status ${pricing.phase === 'done' ? `ps-${pricing.check.status}` : 'ps-checking'}`}>
+              {pricingText(pricing)}
+            </span>
+          )}
+        </div>
         <div className="card-stage" title="Your scanned card appears here. Nothing is saved until you press SAVE">
           {scanning ? (
             <Scanner cover={frames[0]} />

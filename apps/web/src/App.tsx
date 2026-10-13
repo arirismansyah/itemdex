@@ -83,7 +83,7 @@ export function App() {
         <div className="hud">
           <div className="hud-stat" title="Number of items in your collection"><span>ITEMS</span><b>{stats.data?.total ?? 0}</b></div>
           <div className="hud-stat" title="Estimated resale value of everything in your collection (only items priced in the service currency are added)"><span>TOTAL VALUE</span><b>{money(stats.data?.total_value ?? 0)}</b></div>
-          <div className={`hud-led ${led[0]}`} title={h ? `Model: ${h.model || 'not set'}` : 'AI status'}><i /><span>{led[1]}</span></div>
+          <div className={`hud-led ${led[0]}`} title={h ? `Model: ${h.model || 'not set'} · Price search: ${h.search == null ? 'off' : h.search ? 'online' : 'offline'}` : 'AI status'}><i /><span>{led[1]}</span></div>
           <select
             className="locale-select"
             value={localeId}

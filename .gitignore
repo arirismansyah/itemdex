@@ -6,3 +6,7 @@ data/
 *.tsbuildinfo
 .DS_Store
 .itemdex/
+# SearXNG local install (tools/searxng/setup.sh)
+tools/searxng/src/
+tools/searxng/.venv/
+tools/searxng/.secret

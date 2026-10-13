@@ -4,8 +4,9 @@
 import { fromAnthropicResponse, toAnthropicRequest } from './anthropic.js';
 import {
   CONDITIONS, CONFIDENCES, FLAGS, RARITIES, SIZE_CLASSES, SORTS, TYPES,
-  type Item, type Locale, type Platform,
+  type Card, type Item, type Locale, type Platform,
 } from '@itemdex/shared';
+import type { Listing as WebListing } from './pricing.js';
 
 const CARD_SCHEMA = {
   type: 'object',
@@ -149,6 +150,55 @@ Ignore people, faces, hands holding the item, walls, and background furniture un
 If there is no clear item, set has_item=false.
 name: short English name, max 3 words.
 box: bounding box of the item as [ymin, xmin, ymax, xmax] normalized to 0-1000.`;
+
+const APPRAISE_SCHEMA = {
+  type: 'object',
+  properties: {
+    matches: {
+      type: 'array',
+      maxItems: 10,
+      items: {
+        type: 'object',
+        properties: { index: { type: 'integer' }, price: { type: 'integer' } },
+        required: ['index', 'price'],
+      },
+    },
+    min: { type: 'integer' },
+    max: { type: 'integer' },
+    typical: { type: 'integer' },
+    new_price: { type: 'integer' },
+    confidence: { type: 'string', enum: CONFIDENCES },
+    reasoning: { type: 'string' },
+  },
+  required: ['matches', 'min', 'max', 'typical', 'new_price', 'confidence', 'reasoning'],
+};
+
+function appraisePrompt(card: Card, listings: WebListing[], { language, currency, market }: Locale) {
+  const v = card.value;
+  const item = [
+    `name: ${card.name}`, card.brand && `brand: ${card.brand}`, card.model && `model: ${card.model}`,
+    card.subcategory && `category: ${card.subcategory}`,
+    `condition: ${card.condition.label} (${card.condition.score}/100)${card.condition.notes ? ` - ${card.condition.notes}` : ''}`,
+    `current estimate (${currency}): used ${v.min}-${v.max}, typical ${v.typical}, new ${v.new_price}`,
+  ].filter(Boolean).join('\n');
+  const rows = listings.map((l, i) =>
+    `[${i}] ${l.site} | ${l.title} | ${l.snippet} | prices found: ${l.prices.join(', ')}`).join('\n');
+  return `You are a second-hand price analyst for the ${market} market. Currency: ${currency}.
+
+ITEM
+${item}
+
+WEB LISTINGS (search results, noisy)
+${rows}
+
+Task:
+1. "matches": listings that sell or price THIS SAME product (same model/generation/variant, as close as the info allows) as USED / second-hand. For each give "index" and the "price" from its "prices found" that belongs to this item. Exclude accessories, cases, spare parts, broken or for-parts units (unless the item itself is broken), bundles, rentals, different models or generations, and articles that list many products without a clear price for this exact item.
+2. "new_price": the current NEW retail price of this exact product if a listing shows it, else keep the current estimate.
+3. "min", "max", "typical": realistic used price range for this item in its condition, based mainly on the matched prices (typical near their median, adjusted for condition). If nothing matches, return "matches": [] and the current estimate unchanged.
+4. "confidence": HIGH with 3+ good matches, MEDIUM with 1-2, LOW with none.
+5. "reasoning": one short sentence in ${language} explaining the price (do not state how many listings were used).
+Whole numbers only. Respond with JSON only.`;
+}
 
 function systemPrompt({ language, currency, market }: { language: string; currency: string; market: string }) {
   return `You are ITEMDEX, an expert appraiser and cataloguer of personal belongings.
@@ -369,6 +419,12 @@ Skip walls, floors, built-in fixtures and tiny clutter. Each card also has "box"
     const text = ['Catalogue the items in this image.', hint ? `Owner's note: "${hint}"` : ''].filter(Boolean).join('\n');
     const out = await this.structured(this.imageMessage(system, text, images), 'itemdex_room', ROOM_SCHEMA, { maxTokens: 6000 });
     return Array.isArray(out.items) ? out.items : [];
+  }
+
+  // Re-estimates the value from web listings (text only). See pricing.ts.
+  async appraise(card: Card, listings: WebListing[], locale?: Locale): Promise<Json> {
+    const messages = [{ role: 'user', content: appraisePrompt(card, listings, { ...this.opts, ...locale }) }];
+    return this.structured(messages, 'itemdex_appraise', APPRAISE_SCHEMA, { maxTokens: 600, temperature: 0.1 });
   }
 
   async listing(item: Item, platform: Platform, locale?: Locale): Promise<Json> {

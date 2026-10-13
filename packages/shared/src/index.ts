@@ -10,6 +10,7 @@ export const SIZE_CLASSES = ['TINY', 'SMALL', 'MEDIUM', 'LARGE', 'HUGE'] as cons
 export const CONFIDENCES = ['LOW', 'MEDIUM', 'HIGH'] as const;
 export const SOURCES = ['photo', 'video', 'camera'] as const;
 export const SORTS = ['new', 'old', 'value', 'rarity', 'name', 'number'] as const;
+export const PRICE_CHECK_STATUSES = ['grounded', 'no_match', 'no_results', 'disabled', 'error'] as const;
 // Collection filters driven by the item's life after cataloguing.
 export const FLAGS = ['lent', 'overdue', 'sell_now', 'warranty'] as const;
 export const PLATFORMS = ['generic', 'tokopedia', 'facebook', 'ebay'] as const;
@@ -21,6 +22,7 @@ export type SizeClass = (typeof SIZE_CLASSES)[number];
 export type Confidence = (typeof CONFIDENCES)[number];
 export type Source = (typeof SOURCES)[number];
 export type Sort = (typeof SORTS)[number];
+export type PriceCheckStatus = (typeof PRICE_CHECK_STATUSES)[number];
 export type Flag = (typeof FLAGS)[number];
 export type Platform = (typeof PLATFORMS)[number];
 
@@ -30,9 +32,13 @@ export const RARITY_RANK: Record<Rarity, number> = {
 
 export interface Dimensions { length_cm: number; width_cm: number; height_cm: number }
 export interface Condition { score: number; label: ConditionLabel; notes: string }
+// A web listing used as a price comparison (from the search-based price check).
+export interface PriceSource { title: string; url: string; site: string; price: number }
 export interface Value {
   min: number; max: number; typical: number; new_price: number;
   confidence: Confidence; reasoning: string;
+  sources?: PriceSource[]; // present when the value was checked against web listings
+  checked_at?: string; // ISO time of the last price check
 }
 export interface Ability { name: string; power: number; text: string }
 
@@ -108,7 +114,16 @@ export interface Item extends Card {
   updated_at: string;
 }
 
-export interface ScanResult { card: Card; best_frame: number; currency: string; elapsed_ms: number }
+export interface PriceCheck {
+  status: PriceCheckStatus; // grounded = value now based on matching listings
+  query: string;
+  listings: number; // listings with a price found by the search
+  used: number; // listings Gemma judged to be the same product
+  elapsed_ms: number;
+  error?: string;
+}
+export interface PriceCheckResult { value: Value; price_check: PriceCheck }
+export interface ScanResult { card: Card; best_frame: number; currency: string; elapsed_ms: number; price_check?: PriceCheck }
 export interface RoomResult { items: { card: Card; box: [number, number, number, number] | null }[]; currency: string; elapsed_ms: number }
 export interface Listing { title: string; description: string; price: number; currency: string; platform: Platform }
 export interface AskFilters {
@@ -161,6 +176,7 @@ export interface Meta {
   accounts: boolean;
   enums: Record<string, readonly string[]>;
   limits: Record<string, number>;
+  features: { price_check: boolean };
 }
 
 // ---------------------------------------------------------------- normalize
@@ -188,6 +204,24 @@ export function sizeClassFor({ length_cm, width_cm, height_cm }: Dimensions): Si
 }
 
 type Loose = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+function normalizeSources(list: unknown): PriceSource[] | undefined {
+  if (!Array.isArray(list)) return undefined;
+  const out: PriceSource[] = [];
+  for (const s of list as Loose[]) {
+    const url = str(s?.url, 500);
+    if (!/^https?:\/\//i.test(url)) continue;
+    const price = int(s?.price, 0, 1e13, 0);
+    if (!price) continue;
+    let site = str(s?.site, 60);
+    if (!site) {
+      try { site = new URL(url).hostname.replace(/^www\./, ''); } catch { continue; }
+    }
+    out.push({ title: str(s?.title, 160), url, site, price });
+    if (out.length === 8) break;
+  }
+  return out;
+}
 
 // Turns raw model output (or user edits) into a safe, complete card.
 export function normalizeCard(raw: Loose = {}): Card {
@@ -241,6 +275,9 @@ export function normalizeCard(raw: Loose = {}): Card {
       new_price: int(v.new_price, 0, 1e13, 0),
       confidence: oneOf(v.confidence, CONFIDENCES, 'LOW'),
       reasoning: str(v.reasoning, 300),
+      ...(Array.isArray(v.sources) ? { sources: normalizeSources(v.sources) } : {}),
+      ...(typeof v.checked_at === 'string' && !Number.isNaN(Date.parse(v.checked_at))
+        ? { checked_at: new Date(v.checked_at).toISOString() } : {}),
     },
     rarity: oneOf(raw.rarity, RARITIES, 'COMMON'),
     abilities,

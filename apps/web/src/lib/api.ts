@@ -9,8 +9,8 @@ import {
   keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient,
 } from '@tanstack/react-query';
 import type {
-  AiConfig, AiTest, AskFilters, Card, DetectResult, Household, Item, ItemList, Listing, Meta, Platform, RoomResult,
-  ScanResult, Session, ShopeeStatus, Sort, Source, Stats,
+  AiConfig, AiTest, AskFilters, Card, DetectResult, Household, Item, ItemList, Listing, Meta, Platform, PriceCheck,
+  PriceCheckResult, RoomResult, ScanResult, Session, ShopeeStatus, Sort, Source, Stats,
 } from '@itemdex/shared';
 import { localeBody } from './locale';
 
@@ -76,7 +76,10 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
 
 // ---------------------------------------------------------------- queries
 
-export interface Health { ok: boolean; llm: boolean; db: boolean; model: string; items: number; version: string }
+export interface Health {
+  ok: boolean; llm: boolean; db: boolean; model: string; items: number; version: string;
+  search: boolean | null; // null = price check not configured
+}
 
 export const useHealth = () => useQuery({
   queryKey: ['health'],
@@ -135,7 +138,7 @@ export const useItem = (id: string | null, placeholder?: Item) => useQuery({
 
 // ---------------------------------------------------------------- mutations
 
-function useItemMutation<V>(fn: (v: V) => Promise<{ item: Item }>) {
+function useItemMutation<V, R extends { item: Item }>(fn: (v: V) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
@@ -166,6 +169,11 @@ export const useUpdateItem = () =>
 export const useMoveItem = () =>
   useItemMutation(({ id, location }: { id: string; location: Record<string, unknown> }) =>
     api<{ item: Item }>(`/items/${id}/location`, { method: 'PUT', body: location }));
+
+// Re-checks a saved item's value against web listings (updates it when listings match).
+export const useRecheckPrice = () =>
+  useItemMutation((id: string) =>
+    api<{ item: Item; price_check: PriceCheck }>(`/items/${id}/price-check`, { method: 'POST' }));
 
 export function useDeleteItem() {
   const qc = useQueryClient();
@@ -205,6 +213,10 @@ export const scanRoom = (image: string, hint: string) =>
 
 export const ask = (query: string) =>
   api<{ filters: AskFilters }>('/ask', { method: 'POST', body: { query, locale: localeBody() } }).then((r) => r.filters);
+
+// Checks an unsaved card's value against web listings (~4s).
+export const priceCheck = (card: Card) =>
+  api<PriceCheckResult>('/price-check', { method: 'POST', body: { card, locale: localeBody() } });
 
 export const detect = (image: string, signal?: AbortSignal) =>
   api<DetectResult>('/detect', { method: 'POST', body: { image }, signal });

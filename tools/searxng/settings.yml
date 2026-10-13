@@ -1,0 +1,26 @@
+# ITEMDEX's SearXNG config: defaults + JSON API, bound to localhost.
+# Used by tools/searxng/start.sh (SEARXNG_SETTINGS_PATH points here).
+use_default_settings: true
+
+general:
+  instance_name: "ITEMDEX search"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "id-ID"
+  formats:
+    - html
+    - json
+
+server:
+  port: 8888
+  bind_address: "127.0.0.1"
+  limiter: false
+  public_instance: false
+  secret_key: "overwritten-by-SEARXNG_SECRET"
+  image_proxy: false
+
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 8.0

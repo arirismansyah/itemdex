@@ -19,6 +19,12 @@ export interface Config {
   currency: string;
   market: string;
   reverseGeocode: boolean;
+  search: {
+    url: string; // SearXNG base URL; empty = price check disabled
+    autostart: boolean; // start tools/searxng with the service when url is local
+    timeoutMs: number;
+    language: string;
+  };
   apiKey: string; // ITEMDEX_API_KEY: protects /api when the service is exposed
   shopee: ShopeeConfig; // marketplace price check
   accounts: boolean; // ACCOUNTS=true: email/password sign-in + shared households (replaces apiKey)
@@ -62,6 +68,12 @@ export function loadConfig(overrides: Partial<Config> = {}, env = process.env): 
     currency: env.CURRENCY || 'IDR',
     market: env.MARKET || 'Indonesian',
     reverseGeocode: bool(env.REVERSE_GEOCODE, true),
+    search: {
+      url: (env.SEARCH_URL || '').replace(/\/+$/, ''),
+      autostart: bool(env.SEARCH_AUTOSTART, true),
+      timeoutMs: Number(env.SEARCH_TIMEOUT_MS) || 10_000,
+      language: env.SEARCH_LANGUAGE || 'id-ID',
+    },
     apiKey: env.ITEMDEX_API_KEY || '',
     shopee: {
       state: path.resolve(env.SHOPEE_STATE || '.itemdex/shopee-state.json'),

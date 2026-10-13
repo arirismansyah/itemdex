@@ -122,6 +122,25 @@ npm run db:import-legacy                 # old desktop data folder (default)
 npm run db:import-legacy -- ./data       # or any folder with items.json + media/
 ```
 
+### Market price check (optional)
+
+Without it, a card's value is Gemma's own guess. With it, the service searches
+second-hand listings (Tokopedia, OLX, Shopee, ...) through a self-hosted
+[SearXNG](https://github.com/searxng/searxng) (open source, no API key, no Docker),
+lets Gemma keep only listings of the same product, and shows the prices with links.
+
+```bash
+npm run search:setup   # once: installs SearXNG into tools/searxng (needs Python >= 3.10 + git)
+```
+
+and set `SEARCH_URL=http://127.0.0.1:8888` in `.env` (desktop: in `itemdex.env`). That's it:
+`npm run dev` / `npm start` start SearXNG with the service and stop it on exit
+(an instance that is already running is reused). `npm run search` still runs it on its own,
+and `SEARCH_AUTOSTART=false` turns the auto-start off.
+
+Public SearXNG instances can't replace this: most disable the JSON API (HTTP 403) and
+rate-limit bots. Rupiah prices only. Details: [docs/API.md §4.4](docs/API.md).
+
 ## Run
 
 ```bash
@@ -187,3 +206,6 @@ Full API guide: [docs/API.md](docs/API.md) · Swagger: `http://localhost:7777/ap
   (set by VS Code terminals). If you run `electron` yourself, `unset ELECTRON_RUN_AS_NODE` first.
 - `AI OFFLINE` in the header: the AI server is not set or not reachable from this machine (VPN?). Open the gear icon, enter its URL, key and model, and press TEST.
 - `DB OFFLINE`: check `DATABASE_URL` and that PostgreSQL is running.
+- Card says `AI ESTIMATE · PRICE SEARCH FAILED`: check the service log for `price search:` lines
+  (not installed → `npm run search:setup`; it takes ~5s after startup to be ready).
+  Hover the GEMMA ONLINE light to see the price search status.

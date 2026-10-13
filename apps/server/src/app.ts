@@ -19,7 +19,9 @@ import type { Config } from './config.js';
 import { createPool, migrate, type Db } from './db.js';
 import { LlmClient, LlmError, cleanBaseUrl } from './llm.js';
 import { cleanLocation, reverseGeocode } from './geo.js';
+import { checkPrice, SearchClient } from './pricing.js';
 import { toCsv, toHtml } from './report.js';
+import { autostartSearch } from './searxng.js';
 import { Settings } from './settings.js';
 import { DEFAULT_HOUSEHOLD, ItemsRepo, type ImageBlob } from './repo.js';
 
@@ -94,6 +96,8 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
       market: cleanText(l.market, 30) || config.market,
     };
   };
+  const search = new SearchClient(config.search);
+  const searchDisabled = () => new HttpError(503, 'search_disabled', 'Price check is not configured (set SEARCH_URL)');
 
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -154,11 +158,15 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
   // ------------------------------------------------------------- API
   const api = async (r: FastifyInstance) => {
     r.get('/health', async () => {
-      const [ai, items] = await Promise.all([
+      const [ai, items, searchOk] = await Promise.all([
         llm.ping(),
         repo.count().catch(() => null),
+        search.ping(),
       ]);
-      return { ok: items !== null, version: VERSION, llm: ai, db: items !== null, model: llm.model, items: items ?? 0 };
+      return {
+        ok: items !== null, version: VERSION, llm: ai, db: items !== null, search: searchOk,
+        model: llm.model, items: items ?? 0,
+      };
     });
 
     r.get('/meta', async () => ({
@@ -177,6 +185,7 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         recommended_detect_image_side_px: 512,
         thumb_side_px: 360,
       },
+      features: { price_check: search.enabled },
     }));
 
     const bearer = (req: FastifyRequest) =>
@@ -237,14 +246,28 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
 
       // Analyze images -> card preview (NOT saved; POST /items to save).
       p.post('/scan', async (req) => {
-        const body = (req.body || {}) as { images?: unknown; hint?: unknown; source?: unknown; locale?: unknown };
+        const body = (req.body || {}) as { images?: unknown; hint?: unknown; source?: unknown; locale?: unknown; price_check?: unknown };
         const images = validImages(body.images);
         if (!images.length) throw bad(`"images" must contain 1-${MAX_IMAGES} data:image/... URLs`);
         const locale = localeOf(body.locale);
         const started = Date.now();
         const raw = await llm.analyze(images, { hint: cleanText(body.hint, 300), isVideo: body.source === 'video', locale });
         const bestFrame = Math.min(images.length - 1, Math.max(0, Number(raw.best_frame) || 0));
-        return { card: normalizeCard(raw), best_frame: bestFrame, currency: locale.currency, elapsed_ms: Date.now() - started };
+        const card = normalizeCard(raw);
+        // Optional one-shot mode for API clients; the web app calls /price-check separately.
+        if (body.price_check === true && card.is_item && search.enabled) {
+          const { value, price_check } = await checkPrice(card, search, llm, locale);
+          return { card: { ...card, value }, best_frame: bestFrame, currency: locale.currency, elapsed_ms: Date.now() - started, price_check };
+        }
+        return { card, best_frame: bestFrame, currency: locale.currency, elapsed_ms: Date.now() - started };
+      });
+
+      // Check a (not yet saved) card's value against web listings.
+      p.post('/price-check', async (req) => {
+        if (!search.enabled) throw searchDisabled();
+        const body = (req.body || {}) as { card?: unknown; locale?: unknown };
+        if (!body.card || typeof body.card !== 'object') throw bad('Missing "card" object');
+        return checkPrice(normalizeCard(body.card as object), search, llm, localeOf(body.locale));
       });
 
       // One photo of a room/shelf -> a card per item (NOT saved; POST /items for each).
@@ -431,6 +454,19 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
       p.patch('/items/:id', updateItem);
       p.put('/items/:id', updateItem);
 
+      // Re-check a saved item's value; the item is updated only when listings matched.
+      p.post('/items/:id/price-check', async (req) => {
+        if (!search.enabled) throw searchDisabled();
+        const prev = await owned(req);
+        const locale = localeOf({ ...(req.body as object), currency: prev.currency });
+        const { value, price_check } = await checkPrice(normalizeCard(prev), search, llm, locale);
+        const item = price_check.status === 'grounded'
+          ? await repo.update(req.hid, prev.id, normalizeCard(mergeCard(prev, { value })), urlFor(req))
+          : prev;
+        if (!item) throw notFound();
+        return { item, price_check };
+      });
+
       // "Last seen" location update.
       p.put('/items/:id/location', async (req) => {
         const id = idParam(req);
@@ -610,7 +646,10 @@ export async function startServer(config: Config): Promise<ServerHandle> {
     await app.close();
     throw err;
   }
+  let stopSearch = () => {};
+  app.addHook('onClose', async () => { stopSearch(); }); // hooks can't be added after listen
   await app.listen({ host: config.host, port: config.port });
+  stopSearch = await autostartSearch(config.search, app.log);
   const addr = app.server.address();
   const port = typeof addr === 'object' && addr ? addr.port : config.port;
   const shown = config.host === '0.0.0.0' || config.host === '::' ? 'localhost' : config.host;

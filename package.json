@@ -12,10 +12,17 @@
     "node": ">=20.19"
   },
   "scripts": {
+    "predev": "node scripts/check-node.cjs",
     "dev": "concurrently -k -n server,web -c yellow,cyan \"npm run dev -w @itemdex/server\" \"npm run dev -w @itemdex/web\"",
+    "prebuild": "node scripts/check-node.cjs",
     "build": "npm run build -w @itemdex/server && npm run build -w @itemdex/web",
+    "prestart": "node scripts/check-node.cjs",
     "start": "npm run start -w @itemdex/server",
+    "search:setup": "bash tools/searxng/setup.sh",
+    "search": "bash tools/searxng/start.sh",
+    "predesktop": "node scripts/check-node.cjs",
     "desktop": "npm run build -w @itemdex/web && npm run build -w @itemdex/desktop && npm run start -w @itemdex/desktop",
+    "predist:desktop": "node scripts/check-node.cjs",
     "dist:desktop": "npm run build -w @itemdex/web && npm run dist -w @itemdex/desktop",
     "db:migrate": "npm run migrate -w @itemdex/server",
     "db:import-legacy": "npm run import-legacy -w @itemdex/server --",

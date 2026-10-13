@@ -34,6 +34,10 @@ LLM_MODEL=
 # MARKET=Indonesian
 # REVERSE_GEOCODE=true
 
+# Market price check against web listings (SearXNG; install once with: npm run search:setup)
+# A local URL is started automatically when running from the repo.
+# SEARCH_URL=http://127.0.0.1:8888
+
 # Use a hosted ITEMDEX service instead of the local one (then the settings above are ignored)
 # ITEMDEX_SERVER_URL=https://itemdex.example.com
 `;
