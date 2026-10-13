@@ -12,6 +12,7 @@ import { ShopeeMenu } from './components/ShopeeMenu';
 import { useHealth, useMeta, useStats, useToken } from './lib/api';
 import { LOCALES, getLocaleId, setLocaleId } from './lib/locale';
 import { say } from './lib/dialog';
+import { closeMenus } from './lib/menu';
 import { money, setCurrency } from './lib/format';
 import { desktop } from './lib/platform';
 import { Sound } from './lib/sound';
@@ -34,6 +35,7 @@ export function App() {
 
   const go = useCallback((v: View) => {
     Sound.play('select');
+    closeMenus();
     setView(v);
     window.history.replaceState(null, '', v === 'scan' ? window.location.pathname : '#collection');
   }, []);

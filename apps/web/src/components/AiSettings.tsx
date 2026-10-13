@@ -1,6 +1,7 @@
 // Header menu: point ITEMDEX at an OpenAI-compatible AI server (URL, API key, model).
 
 import { useEffect, useState, type FormEvent } from 'react';
+import { useMenu } from '../lib/menu';
 import { testAi, useAiConfig, useSaveAi } from '../lib/api';
 import { say } from '../lib/dialog';
 
@@ -20,7 +21,7 @@ const presetFor = (url: string) =>
   PRESETS.find((p) => p.url && url.replace(/\/+$/, '').startsWith(p.url.replace(/\/v1$/, ''))) ?? PRESETS[0];
 
 export function AiSettings() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useMenu('ai');
   const { data: cfg } = useAiConfig();
   const save = useSaveAi();
   const [url, setUrl] = useState('');

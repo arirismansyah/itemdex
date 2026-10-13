@@ -1,11 +1,12 @@
 // Header menu: save (or remove) the Shopee login used for price checks.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { useMenu } from '../lib/menu';
 import { useShopee } from '../lib/api';
 import { say } from '../lib/dialog';
 
 export function ShopeeMenu() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useMenu('shopee');
   const shopee = useShopee();
   const s = shopee.data;
   const prev = useRef(s?.state);

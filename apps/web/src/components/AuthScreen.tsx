@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { setToken, signIn, signOut, useHousehold } from '../lib/api';
 import { say } from '../lib/dialog';
+import { useMenu } from '../lib/menu';
 
 export function AuthScreen() {
   const qc = useQueryClient();
@@ -52,7 +53,7 @@ export function AuthScreen() {
 
 export function AccountMenu() {
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useMenu('account');
   return (
     <span className="account">
       <button className="icon-btn" onClick={() => setOpen((o) => !o)} title="Household" aria-label="Household" aria-expanded={open}>☺</button>
