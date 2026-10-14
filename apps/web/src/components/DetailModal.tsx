@@ -48,7 +48,7 @@ function LocationBlock({ item }: { item: Item }) {
                 {loc.accuracy_m ? <em>±{loc.accuracy_m}m</em> : null}
                 <em>{loc.source === 'exif' ? 'PHOTO EXIF' : 'DEVICE GPS'}</em>
               </p>
-              <a className="btn btn-small" title="Open this spot on OpenStreetMap" href={mapUrl(loc)} target="_blank" rel="noopener noreferrer">⌖ OPEN MAP</a>
+              <a className="btn btn-small" title="Open this spot in Google Maps" href={mapUrl(loc)} target="_blank" rel="noopener noreferrer">⌖ OPEN MAP</a>
             </>
           )}
         </>

@@ -42,13 +42,24 @@ export function ValueBlock({ item }: { item: Item }) {
   const basis = web.length
     ? `WEB · ${web.length} LISTING${web.length === 1 ? '' : 'S'}`
     : c && v.reasoning.includes('Shopee') ? 'SHOPEE' : 'AI ESTIMATE';
+  const shopeeOn = cur === 'IDR' && !!shopee.data?.connected;
+  // One list for both checks: web listings first, then the top Shopee ones.
+  const sources = [...web, ...(c?.sources.slice(0, 4).map((s) => ({ ...s, site: s.site || 'shopee' })) ?? [])]
+    .filter((s, i, all) => all.findIndex((x) => x.url === s.url) === i);
+  const checked = [
+    v.checked_at && `Market checked ${ago(v.checked_at)}`,
+    c && `Shopee checked ${ago(c.at)}`,
+  ].filter(Boolean) as string[];
 
   const check = async () => {
     try {
       const { item: next } = await verify.mutateAsync(item.id);
       const n = next.comps?.n ?? 0;
       say(n >= 3 ? `Price updated from ${n} Shopee listings.` : `Only ${n} listings found, value kept.`, { sound: 'select' });
-    } catch (err) { fail(err); }
+    } catch (err) {
+      fail(err);
+      void shopee.refetch(); // an expired session disconnects Shopee on the server
+    }
   };
 
   // Web search (SearXNG) check: the value changes only when listings of the same product were found.
@@ -83,19 +94,9 @@ export function ValueBlock({ item }: { item: Item }) {
           {item.value_history.length} price points since {date(item.value_history[0].at)}
         </p>
       )}
-      {c && (
-        <ul className="history">
-          {c.sources.slice(0, 4).map((s) => (
-            <li key={s.url}>
-              <span><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}</a></span>
-              <em>{money(s.price, { currency: cur })}</em>
-            </li>
-          ))}
-        </ul>
-      )}
-      {web.length > 0 && (
+      {sources.length > 0 && (
         <ul className="price-sources">
-          {web.map((src) => (
+          {sources.map((src) => (
             <li key={src.url}>
               <a href={src.url} target="_blank" rel="noopener noreferrer" title={src.title}>
                 <span className="ps-site">{src.site}</span>
@@ -106,23 +107,23 @@ export function ValueBlock({ item }: { item: Item }) {
           ))}
         </ul>
       )}
-      {(v.checked_at || priceOn) && (
-        <div className="price-foot">
-          {v.checked_at && <span className="muted">Checked {ago(v.checked_at)}</span>}
+      {(priceOn || shopeeOn) && (
+        <div className="price-actions">
           {priceOn && (
-            <button className="btn btn-small" onClick={checkWeb} disabled={recheck.isPending} title="Search the web for second-hand listings of this item and ground the value in them">
+            <button className="btn btn-small" onClick={checkWeb} disabled={recheck.isPending || verify.isPending} title="Search the web for second-hand listings of this item and ground the value in them">
               {recheck.isPending ? '⟳ CHECKING...' : '↻ CHECK MARKET PRICE'}
+            </button>
+          )}
+          {shopeeOn && (
+            <button className="btn btn-small" onClick={check} disabled={verify.isPending || recheck.isPending} title="Search Shopee for this item and set the value from real listings (takes about 15 seconds)">
+              {verify.isPending ? '⟳ SEARCHING SHOPEE...' : '⌕ CHECK ON SHOPEE'}
             </button>
           )}
         </div>
       )}
-      {cur === 'IDR' && shopee.data?.connected && (
-        <button className="btn btn-small" onClick={check} disabled={verify.isPending} title="Search Shopee for this item and set the value from real listings (takes about 15 seconds)">
-          {verify.isPending ? 'SEARCHING SHOPEE...' : c ? `↻ RE-CHECK ON SHOPEE (${ago(c.at)})` : '⌕ CHECK ON SHOPEE'}
-        </button>
-      )}
+      {checked.length > 0 && <p className="muted small price-checked">{checked.join(' · ')}</p>}
       {cur === 'IDR' && shopee.data && !shopee.data.connected && (
-        <p className="muted small">Connect Shopee (🛒 menu) to check this price against real listings.</p>
+        <p className="muted small">Connect Shopee from the 🛒 menu to also check real Shopee listings.</p>
       )}
     </section>
   );

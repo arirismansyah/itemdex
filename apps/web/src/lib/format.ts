@@ -69,6 +69,6 @@ export function placeLabel(loc?: Partial<ItemLocation> | null): string {
 }
 
 export const mapUrl = (loc: { lat: number | null; lng: number | null }) =>
-  `https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}#map=18/${loc.lat}/${loc.lng}`;
+  `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
 
 export const pad = (n?: number) => (n ? String(n).padStart(3, '0') : '???');

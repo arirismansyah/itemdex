@@ -65,7 +65,7 @@ const Card = (() => {
   }
 
   const mapUrl = (loc) =>
-    `https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}#map=18/${loc.lat}/${loc.lng}`;
+    `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
 
   const pad = (n) => (n ? String(n).padStart(3, '0') : '???');
 

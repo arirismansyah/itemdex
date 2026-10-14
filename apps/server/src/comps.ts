@@ -1,6 +1,6 @@
 // Price check on Shopee Indonesia: reads the public search page with a headless browser (Playwright),
 // logged in with a session the user saves once through the app (Shopee blocks anonymous browsers).
-// Needs `npx playwright-core install chromium`. Without a saved session the feature is off and
+// Needs Google Chrome (or `npx playwright-core install chromium`). Without a saved session the feature is off and
 // values stay the AI estimates.
 
 import fs from 'node:fs';
@@ -20,6 +20,26 @@ const MISSING = 'Price check needs Playwright: npm i playwright-core && npx play
 
 export const connected = (cfg: ShopeeConfig) => fs.existsSync(cfg.state);
 
+// Playwright's own Chromium first, then an installed Chrome or Edge, so the price check works
+// even where the Chromium download is blocked (office networks).
+async function launch(headless: boolean) {
+  let chromium;
+  try {
+    ({ chromium } = await import('playwright-core'));
+  } catch {
+    throw new Error(MISSING);
+  }
+  let first: Error | undefined;
+  for (const channel of [undefined, 'chrome', 'msedge']) {
+    try {
+      return await chromium.launch({ headless, channel });
+    } catch (e) {
+      first ??= e as Error;
+    }
+  }
+  throw new Error(`Cannot start the browser: install Google Chrome or run "npx playwright-core install chromium" (${first!.message.split('\n')[0]})`);
+}
+
 export function disconnect(cfg: ShopeeConfig) {
   fs.rmSync(cfg.state, { force: true });
   login = { state: 'idle', message: '' };
@@ -32,15 +52,7 @@ export const loginStatus = () => login;
 // Opens a visible browser; the user logs in; the session is saved when the login cookie appears.
 export async function startLogin(cfg: ShopeeConfig): Promise<void> {
   if (login.state === 'waiting') return;
-  let chromium;
-  try {
-    ({ chromium } = await import('playwright-core'));
-  } catch {
-    throw new Error(MISSING);
-  }
-  const browser = await chromium.launch({ headless: false }).catch((e: Error) => {
-    throw new Error(`Cannot open the browser: run "npx playwright-core install chromium" (${e.message.split('\n')[0]})`);
-  });
+  const browser = await launch(false);
   login = { state: 'waiting', message: 'Log in to Shopee in the window that opened' };
   void (async () => {
     try {
@@ -100,15 +112,7 @@ const EXTRACT = `(() => {
 
 export async function fetchComps(query: string, cfg: ShopeeConfig): Promise<Comps | null> {
   if (!connected(cfg)) throw new Error('Shopee is not connected');
-  let chromium;
-  try {
-    ({ chromium } = await import('playwright-core'));
-  } catch {
-    throw new Error(MISSING);
-  }
-  const browser = await chromium.launch({ headless: true }).catch((e: Error) => {
-    throw new Error(`Cannot start the browser: run "npx playwright-core install chromium" (${e.message.split('\n')[0]})`);
-  });
+  const browser = await launch(true);
   // At least half the query words must appear in the title, otherwise it is a different product.
   const words = query.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
   const need = Math.ceil(words.length / 2);
@@ -123,6 +127,7 @@ export async function fetchComps(query: string, cfg: ShopeeConfig): Promise<Comp
     });
     await page.waitForTimeout(4000);
     if (/\/(buyer\/login|verify)/.test(page.url())) {
+      disconnect(cfg); // the saved session expired: show Shopee as not connected
       throw new Error('Shopee asked to log in again: reconnect Shopee from the menu');
     }
     await page.mouse.wheel(0, 1500); // lazy-loaded cards

@@ -85,8 +85,10 @@ docs and are covered by offline tests, so report any provider that fails the TES
 
 The AI's price is an estimate. To check a price against real Shopee listings:
 
+It uses your installed Google Chrome (or Edge). Without either, download Playwright's Chromium once:
+
 ```bash
-npx playwright-core install chromium   # once
+npx playwright-core install chromium
 ```
 
 Then click the **🛒 icon** in the app and log in to Shopee in the window that opens (you type your own password;

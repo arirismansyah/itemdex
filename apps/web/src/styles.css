@@ -935,4 +935,6 @@ table.data td { padding: 2px 0; }
 .ps-site { font-family: var(--pixel); font-size: 7px; color: var(--muted); white-space: nowrap; }
 .ps-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .price-sources b { color: var(--accent); white-space: nowrap; }
-.price-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.price-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 2px dashed var(--panel-2); }
+.price-actions .btn { flex: 1 1 180px; }
+.price-checked { margin: 8px 0 0; }
