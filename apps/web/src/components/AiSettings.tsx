@@ -8,6 +8,8 @@ import { say } from '../lib/dialog';
 // Starting points. The URL and model stay editable; the hint says where the key comes from and what to watch for.
 const PRESETS = [
   { id: 'custom', label: 'Other (OpenAI-compatible)', url: '', model: '', hint: 'Gemma on vLLM, LM Studio, OpenRouter, ... Any server with /chat/completions and image input.' },
+  { id: '9router', label: '9router (Homelab)', url: 'http://host.containers.internal:20128/v1', model: 'ag/gemini-3-flash',
+    hint: 'Homelab 9router proxy on port 20128. Uses Antigravity Gemini Flash or gemini-combo.' },
   { id: 'anthropic', label: 'Claude (Anthropic API)', url: 'https://api.anthropic.com', model: 'claude-sonnet-5-5',
     hint: 'Needs an API key from console.anthropic.com (pay per use). A Claude Pro/Max subscription cannot be used: Anthropic does not allow it in other apps. claude-haiku-5-5 is faster and cheaper.' },
   { id: 'deepseek', label: 'DeepSeek', url: 'https://api.deepseek.com', model: '',

@@ -323,7 +323,7 @@ export class LlmClient {
       res = await fetch(`${this.baseUrl}${claude ? '/messages' : '/chat/completions'}`, {
         method: 'POST',
         headers: this.headers(),
-        body: JSON.stringify(claude ? toAnthropicRequest(this.opts.model, body) : { model: this.opts.model, ...body }),
+        body: JSON.stringify(claude ? toAnthropicRequest(this.opts.model, body) : { model: this.opts.model, stream: false, ...body }),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
@@ -333,7 +333,25 @@ export class LlmClient {
     }
     const text = await res.text();
     if (!res.ok) throw new LlmError(`AI server error ${res.status}: ${text.slice(0, 300)}`, res.status);
-    const data = JSON.parse(text);
+    let data: Json;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Fallback if proxy returns SSE stream despite stream: false
+      if (text.includes('data:')) {
+        let content = '';
+        for (const line of text.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue;
+          try {
+            const chunk = JSON.parse(trimmed.slice(5).trim());
+            content += chunk.choices?.[0]?.delta?.content ?? chunk.choices?.[0]?.message?.content ?? '';
+          } catch {}
+        }
+        if (content) return content;
+      }
+      throw new LlmError(`AI returned invalid JSON: ${text.slice(0, 160)}`);
+    }
     return this.kind === 'anthropic' ? fromAnthropicResponse(data) : data.choices?.[0]?.message?.content ?? '';
   }
 
