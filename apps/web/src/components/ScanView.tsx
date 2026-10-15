@@ -466,7 +466,6 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
             <span>WHERE IS IT NOW? <em>(the AI will guess)</em></span>
             <input value={place} onChange={(e) => setPlace(e.target.value)} maxLength={80} placeholder="e.g. lemari kamar, rak 2" />
           </label>
-          <button className="btn btn-primary scan-btn" disabled={!frames.length || scanning} onClick={() => runScan(frames, source)} title="Send the pictures to the AI and make the card">▶ SCAN</button>
         </div>
 
         <div className="field-row two">
@@ -478,6 +477,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
             <span>TAGS <em>(optional, comma separated)</em></span>
             <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} maxLength={120} placeholder="e.g. work, garage" />
           </label>
+          <button className="btn btn-primary scan-btn" disabled={!frames.length || scanning} onClick={() => runScan(frames, source)} title="Send the pictures to the AI and make the card">▶ SCAN</button>
         </div>
       </div>
 
