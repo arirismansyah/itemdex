@@ -20,6 +20,42 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
   return img;
 }
 
+export function makePlaceholderCardImage(title: string): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = 400;
+  canvas.height = 400;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#1c1630';
+  ctx.fillRect(0, 0, 400, 400);
+
+  // Border & frame
+  ctx.strokeStyle = '#4e4175';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(10, 10, 380, 380);
+
+  // Invoice icon
+  ctx.fillStyle = '#ffcc00';
+  ctx.font = 'bold 36px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('INVOICE', 200, 180);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '18px monospace';
+  const clean = title.length > 22 ? title.slice(0, 20) + '...' : title;
+  ctx.fillText(clean, 200, 230);
+
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+export async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error(`Failed to read file "${file.name}"`));
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function imageFileToDataUrl(file: File): Promise<string> {
   const url = URL.createObjectURL(file);
   try {

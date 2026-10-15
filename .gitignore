@@ -10,3 +10,4 @@ data/
 tools/searxng/src/
 tools/searxng/.venv/
 tools/searxng/.secret
+deploy/

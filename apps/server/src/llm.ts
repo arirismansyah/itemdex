@@ -416,6 +416,11 @@ export class LlmClient {
     ];
   }
 
+  // Expose structured method for internal modules (like invoice.ts)
+  async structuredText(messages: Message[], name: string, schema: Json, opts?: { maxTokens?: number; temperature?: number }): Promise<Json> {
+    return this.structured(messages, name, schema, opts);
+  }
+
   // images: data URLs (image/jpeg, image/png or image/webp)
   async analyze(images: string[], { hint = '', isVideo = false, locale }: { hint?: string; isVideo?: boolean; locale?: Locale } = {}): Promise<Json> {
     const intro = isVideo

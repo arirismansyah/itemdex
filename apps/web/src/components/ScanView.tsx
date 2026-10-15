@@ -1,8 +1,8 @@
 // SCAN tab: live viewfinder (auto/manual snap) or uploads -> AI -> card preview -> save.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Card, PriceCheck, RoomResult, ScanResult, Source } from '@itemdex/shared';
-import { priceCheck, scan as scanApi, scanRoom, useCreateItem, useMeta } from '../lib/api';
+import type { Card, InvoiceResult, PriceCheck, RoomResult, ScanResult, Source } from '@itemdex/shared';
+import { priceCheck, scan as scanApi, scanPdf, scanRoom, useCreateItem, useMeta } from '../lib/api';
 import { say } from '../lib/dialog';
 import { money, pad } from '../lib/format';
 import { LiveCam, type LiveStatus, type Shot, type SnapMode } from '../lib/livecam';
@@ -17,7 +17,10 @@ const SCAN_LINES = [
 ];
 
 // Room scan result with each item already cropped out of the photo.
-interface RoomView { currency: string; items: { card: Card; crop: string; on: boolean }[] }
+interface RoomView {
+  currency: string;
+  items: { card: Card; crop: string; on: boolean; purchase?: { store: string; date: string | null; price: number } }[];
+}
 
 // Which picture is "the room": a camera snap holds the detector crop first and the full frame second,
 // a video uses its middle frame, and an uploaded photo is used as is (the first one if there are several).
@@ -89,6 +92,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const stageRef = useRef<HTMLDivElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const videoInput = useRef<HTMLInputElement>(null);
+  const pdfInput = useRef<HTMLInputElement>(null);
 
   const [mode, setModeState] = useState<SnapMode>(readMode);
   const [status, setStatus] = useState<LiveStatus>({ phase: 'off' });
@@ -277,8 +281,36 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   const addFiles = async (fileList: FileList | File[]) => {
     const list = [...fileList];
     if (!list.length) return;
+    const pdf = list.find((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
     const video = list.find((f) => f.type.startsWith('video/'));
     try {
+      if (pdf) {
+        say('Reading PDF invoice text...', { hold: 2000 });
+        setScanning(true);
+        camRef.current?.setPaused(true);
+        showPreview(null);
+        setRoom(null);
+        const dataUrl = await Media.fileToDataUrl(pdf);
+        const res = await scanPdf(dataUrl, live.current.hint);
+        if (!res.items.length) {
+          throw new Error('No items identified in invoice.');
+        }
+        setRoom({
+          currency: res.currency,
+          items: res.items.map((it) => ({
+            card: it.card,
+            crop: Media.makePlaceholderCardImage(it.card.name),
+            on: true,
+            purchase: { store: it.store, date: it.date, price: it.price },
+          })),
+        });
+        setSource('photo');
+        setScanning(false);
+        Sound.play('fanfare');
+        say(`Invoice read! Found ${res.items.length} item(s) from ${res.store || 'store'}.`, { sound: 'select', hold: 4000 });
+        stageRef.current?.scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
       let next: string[];
       let nextGeo = live.current.geo;
       if (video) {
@@ -360,6 +392,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
         await create.mutateAsync({
           card: withUser(it.card), image: it.crop, thumb, source, currency: room.currency,
           location: { place: place.trim() || it.card.location_guess, ...(geo || {}) },
+          purchase: it.purchase,
         });
         saved++;
       }
@@ -407,7 +440,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
 
         <div
           className={`viewfinder${hover ? ' hover' : ''}`}
-          title="Live camera. Show an item to scan it, or drop a photo or video here"
+          title="Live camera. Show an item to scan it, or drop a photo, video or PDF invoice here"
           onDragEnter={(e) => { e.preventDefault(); setHover(true); }}
           onDragOver={(e) => { e.preventDefault(); setHover(true); }}
           onDragLeave={() => setHover(false)}
@@ -451,11 +484,13 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
           <div className="upload-group">
             <button className="btn btn-small" onClick={() => { Sound.play('click'); photoInput.current?.click(); }} title="Upload one or more photos of the item (JPG, PNG, WEBP)">⇪ PHOTO</button>
             <button className="btn btn-small" onClick={() => { Sound.play('click'); videoInput.current?.click(); }} title="Upload a short video; the app takes 4 frames from it">⇪ VIDEO</button>
+            <button className="btn btn-small btn-accent" onClick={() => { Sound.play('click'); pdfInput.current?.click(); }} title="Upload an e-commerce PDF invoice (Tokopedia, Shopee, etc.) to catalogue purchased items" style={{ marginLeft: 6 }}>⇪ INVOICE</button>
             {!usingCamera && <button className="btn btn-small" onClick={backToCamera} title="Drop the uploaded pictures and use the live camera">◉ CAMERA</button>}
           </div>
         </div>
         <input ref={photoInput} type="file" accept="image/*" multiple hidden onChange={(e) => { void addFiles(e.target.files || []); e.target.value = ''; }} />
         <input ref={videoInput} type="file" accept="video/*" hidden onChange={(e) => { void addFiles(e.target.files || []); e.target.value = ''; }} />
+        <input ref={pdfInput} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { void addFiles(e.target.files || []); e.target.value = ''; }} />
 
         <div className="field-row">
           <label className="field" title="Anything the picture cannot show (age, flaws, accessories). The AI reads it with the photo">

@@ -9,7 +9,7 @@ import {
   keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient,
 } from '@tanstack/react-query';
 import type {
-  AiConfig, AiTest, AskFilters, Card, DetectResult, Household, Item, ItemList, Listing, Meta, Platform, PriceCheck,
+  AiConfig, AiTest, AskFilters, Card, DetectResult, Household, InvoiceResult, Item, ItemList, Listing, Meta, Platform, PriceCheck,
   PriceCheckResult, RoomResult, ScanResult, Session, ShopeeStatus, Sort, Source, Stats,
 } from '@itemdex/shared';
 import { localeBody } from './locale';
@@ -157,6 +157,7 @@ export interface NewItem {
   source: Source;
   currency: string;
   location: Record<string, unknown>;
+  purchase?: { store: string; date: string | null; price: number };
 }
 
 export const useCreateItem = () =>
@@ -210,6 +211,9 @@ export const scan = (body: { images: string[]; hint: string; source: Source }) =
 
 export const scanRoom = (image: string, hint: string) =>
   api<RoomResult>('/scan/room', { method: 'POST', body: { image, hint, locale: localeBody() } });
+
+export const scanPdf = (pdf: string, hint: string) =>
+  api<InvoiceResult>('/scan/pdf', { method: 'POST', body: { pdf, hint, locale: localeBody() } });
 
 export const ask = (query: string) =>
   api<{ filters: AskFilters }>('/ask', { method: 'POST', body: { query, locale: localeBody() } }).then((r) => r.filters);

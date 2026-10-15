@@ -357,6 +357,47 @@ paths:
         '502': { $ref: '#/components/responses/LlmError' }
         '503': { $ref: '#/components/responses/Unavailable' }
         '504': { $ref: '#/components/responses/LlmTimeout' }
+  /scan/pdf:
+    post:
+      operationId: scanPdf
+      tags: [AI]
+      summary: Parse an e-commerce PDF invoice (Tokopedia, Shopee, etc.) -> cards for each item. Not saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pdf]
+              properties:
+                pdf: { type: string, description: 'data:application/pdf;base64,...' }
+                hint: { type: string, maxLength: 300 }
+                locale: { $ref: '#/components/schemas/Locale' }
+      responses:
+        '200':
+          description: Invoice items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        card: { $ref: '#/components/schemas/Card' }
+                        store: { type: string }
+                        date: { type: string, nullable: true }
+                        price: { type: integer }
+                  store: { type: string }
+                  date: { type: string, nullable: true }
+                  currency: { type: string }
+                  elapsed_ms: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '502': { $ref: '#/components/responses/LlmError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/LlmTimeout' }
   /ask:
     post:
       operationId: askCollection

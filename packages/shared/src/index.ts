@@ -125,6 +125,8 @@ export interface PriceCheck {
 export interface PriceCheckResult { value: Value; price_check: PriceCheck }
 export interface ScanResult { card: Card; best_frame: number; currency: string; elapsed_ms: number; price_check?: PriceCheck }
 export interface RoomResult { items: { card: Card; box: [number, number, number, number] | null }[]; currency: string; elapsed_ms: number }
+export interface InvoiceItem { card: Card; store: string; date: string | null; price: number }
+export interface InvoiceResult { items: InvoiceItem[]; store: string; date: string | null; currency: string; elapsed_ms: number }
 export interface Listing { title: string; description: string; price: number; currency: string; platform: Platform }
 export interface AskFilters {
   q: string;

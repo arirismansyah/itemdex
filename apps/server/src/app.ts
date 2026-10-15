@@ -19,6 +19,7 @@ import type { Config } from './config.js';
 import { createPool, migrate, type Db } from './db.js';
 import { LlmClient, LlmError, cleanBaseUrl } from './llm.js';
 import { cleanLocation, reverseGeocode } from './geo.js';
+import { parsePdfInvoice } from './invoice.js';
 import { checkPrice, SearchClient } from './pricing.js';
 import { toCsv, toHtml } from './report.js';
 import { autostartSearch } from './searxng.js';
@@ -287,6 +288,18 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         return { items, currency: locale.currency, elapsed_ms: Date.now() - started };
       });
 
+      // Digital PDF invoice -> cards for each item purchased (NOT saved; POST /items for each).
+      p.post('/scan/pdf', async (req) => {
+        const body = (req.body || {}) as { pdf?: unknown; hint?: unknown; locale?: unknown };
+        if (typeof body.pdf !== 'string') throw bad('"pdf" data URL is required');
+        const m = /^data:application\/pdf;base64,(.+)$/s.exec(body.pdf);
+        if (!m) throw bad('"pdf" must be a data:application/pdf;base64,... URL');
+        const buf = Buffer.from(m[1], 'base64');
+        const uint8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+        const locale = localeOf(body.locale);
+        return parsePdfInvoice(uint8, llm, locale, cleanText(body.hint, 300));
+      });
+
       // Natural-language search -> filters the client applies to GET /items.
       p.post('/ask', async (req) => {
         const body = (req.body || {}) as { query?: unknown; locale?: unknown };
@@ -433,13 +446,16 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         const body = (req.body || {}) as Record<string, unknown>;
         if (!body.card || typeof body.card !== 'object') throw bad('Missing "card" object');
         const image = decodeImage(body.image);
-        const item = await repo.create(req.hid, normalizeCard(body.card as object), {
+        let item = await repo.create(req.hid, normalizeCard(body.card as object), {
           image,
           thumb: image ? decodeImage(body.thumb) : null,
           source: (SOURCES as readonly string[]).includes(body.source as string) ? (body.source as Source) : 'photo',
           currency: currencyOf(body.currency),
           location: await reverseGeocode(cleanLocation(body.location), config.reverseGeocode),
         }, urlFor(req));
+        if (body.purchase && typeof body.purchase === 'object') {
+          item = (await savePurchase(req, item.id, body.purchase as Record<string, unknown>)) ?? item;
+        }
         return reply.status(201).send({ item });
       });
 
