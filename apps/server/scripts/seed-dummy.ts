@@ -1,6 +1,7 @@
 // Demo data for the game screens: items plus XP events from made-up players, all flagged dummy = true.
 // Usage: npm run db:seed-dummy            (add; re-running replaces the old dummy rows)
 //        npm run db:seed-dummy -- --remove (delete every dummy row)
+//        npm run db:seed-dummy -- --if-missing (do nothing when dummy rows already exist; used by CI)
 
 import '../src/env.js';
 import { normalizeCard } from '@itemdex/shared';
@@ -48,6 +49,11 @@ const PLAYERS: [string, number, number][] = [
 
 try {
   await migrate(db);
+  if (process.argv.includes('--if-missing')
+    && (await db.query('SELECT 1 FROM items WHERE dummy UNION ALL SELECT 1 FROM game_events WHERE dummy LIMIT 1')).rowCount) {
+    console.log('dummy data already present, skipping');
+    process.exit(0);
+  }
   await remove();
   if (process.argv.includes('--remove')) {
     console.log('dummy rows removed');

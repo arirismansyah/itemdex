@@ -1,0 +1,29 @@
+name: Seed dummy data
+
+# Adds the flagged demo items / leaderboard players to the production database, once.
+# Runs automatically when this file changes (e.g. the push that adds it) or by hand from the Actions tab.
+# Safe to repeat: --if-missing skips when dummy rows already exist.
+# Remove the data later: run `npm run db:seed-dummy -- --remove` with the production DATABASE_URL.
+
+on:
+  push:
+    branches: [ master ]
+    paths: [ '.github/workflows/seed-dummy.yml' ]
+  workflow_dispatch:
+
+concurrency: seed-dummy
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Seed (skips if dummy data already exists)
+        run: npm run db:seed-dummy -- --if-missing
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
