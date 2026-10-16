@@ -571,7 +571,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
           <div className="upload-group">
             <button className="btn btn-small" onClick={() => { Sound.play('click'); photoInput.current?.click(); }} title="Upload one or more photos of the item (JPG, PNG, WEBP)">⇪ PHOTO</button>
             <button className="btn btn-small" onClick={() => { Sound.play('click'); videoInput.current?.click(); }} title="Upload a short video; the app takes 4 frames from it">⇪ VIDEO</button>
-            <button className="btn btn-small btn-accent" onClick={() => { Sound.play('click'); pdfInput.current?.click(); }} title="Upload an invoice or receipt (PDF, PNG, JPG) to catalogue purchased items" style={{ marginLeft: 6 }}>⇪ INVOICE</button>
+            <button className="btn btn-small btn-accent" onClick={() => { Sound.play('click'); pdfInput.current?.click(); }} title="Upload an image, invoice, or receipt (PNG, JPG, PDF) to catalogue purchased items" style={{ marginLeft: 6 }}>⇪ UPLOAD IMAGE</button>
             {!usingCamera && <button className="btn btn-small" onClick={backToCamera} title="Drop the uploaded pictures and use the live camera">◉ CAMERA</button>}
           </div>
         </div>
