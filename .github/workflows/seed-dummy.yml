@@ -23,6 +23,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - name: Require the DATABASE_URL secret
+        run: test -n "$DATABASE_URL" || { echo "::error::Repository secret DATABASE_URL is not set"; exit 1; }
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Seed (skips if dummy data already exists)
         run: npm run db:seed-dummy -- --if-missing
         env:
