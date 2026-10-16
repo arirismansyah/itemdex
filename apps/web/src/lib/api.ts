@@ -13,6 +13,7 @@ import type {
   PriceCheckResult, RoomResult, ScanResult, Session, ShopeeStatus, Sort, Source, Stats,
 } from '@itemdex/shared';
 import { localeBody } from './locale';
+import { playerName } from './player';
 
 function remembered(param: string, storageKey: string): string {
   try {
@@ -45,8 +46,10 @@ export const useToken = () => useSyncExternalStore(
   () => token,
 );
 
-const authHeaders = (): Record<string, string> =>
-  token ? { Authorization: `Bearer ${token}` } : API_KEY ? { 'X-API-Key': API_KEY } : {};
+const authHeaders = (): Record<string, string> => ({
+  ...(token ? { Authorization: `Bearer ${token}` } : API_KEY ? { 'X-API-Key': API_KEY } : {}),
+  ...(playerName() ? { 'X-Player': playerName() } : {}),
+});
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string) {
@@ -146,6 +149,7 @@ function useItemMutation<V, R extends { item: Item }>(fn: (v: V) => Promise<R>) 
       qc.setQueryData(['item', item.id], item);
       qc.invalidateQueries({ queryKey: ['items'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
+      qc.invalidateQueries({ queryKey: ['game'] });
     },
   });
 }
@@ -184,6 +188,7 @@ export function useDeleteItem() {
       qc.removeQueries({ queryKey: ['item', id] });
       qc.invalidateQueries({ queryKey: ['items'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
+      qc.invalidateQueries({ queryKey: ['game'] });
     },
   });
 }
@@ -292,3 +297,26 @@ export async function downloadReport(format: 'csv' | 'html') {
   }
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+// ---------------------------------------------------------------- game
+
+export interface GameState {
+  me: { name: string; xp: number; level: number; from: number; to: number; streak: number; karma: number };
+  quest: { text: string; goal: number; progress: number; done: boolean; reward: number };
+  dex: { types: { name: string; n: number; of: number }[]; rooms: { name: string; n: number; of: number }[]; all: number };
+  quality: { average: number; todo: { id: string; name: string; score: number; missing: string[] }[] };
+  badges: { id: string; name: string; how: string; got: boolean }[];
+  board: { player: string; xp: number; week: number; added: number; karma: number }[];
+}
+export interface GuessItem { id: string; name: string; thumb_url: string | null; currency: string }
+export interface GuessResult { actual: number; off_pct: number; points: number; repeat: boolean }
+
+export const useGame = (enabled = true) => useQuery({
+  queryKey: ['game', playerName()],
+  enabled,
+  queryFn: () => api<GameState>('/game'),
+});
+
+export const nextGuess = () => api<{ item: GuessItem | null }>('/game/guess').then((r) => r.item);
+export const sendGuess = (id: string, guess: number) =>
+  api<GuessResult>('/game/guess', { method: 'POST', body: { id, guess } });

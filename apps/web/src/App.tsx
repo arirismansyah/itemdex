@@ -1,5 +1,6 @@
 // App shell: header + HUD, the two tabs (kept mounted so state survives), detail modal.
 
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import type { Item } from '@itemdex/shared';
 import { CollectionView } from './components/CollectionView';
@@ -8,6 +9,7 @@ import { Dialog } from './components/Dialog';
 import { ScanView } from './components/ScanView';
 import { AccountMenu, AuthScreen } from './components/AuthScreen';
 import { AiSettings } from './components/AiSettings';
+import { GameView } from './components/GameView';
 import { ShopeeMenu } from './components/ShopeeMenu';
 import { useHealth, useMeta, useStats, useToken } from './lib/api';
 import { LOCALES, getLocaleId, setLocaleId } from './lib/locale';
@@ -16,10 +18,11 @@ import { closeMenus } from './lib/menu';
 import { money, setCurrency } from './lib/format';
 import { desktop } from './lib/platform';
 import { Sound } from './lib/sound';
+import { setPlayerName, usePlayer } from './lib/player';
 
-type View = 'scan' | 'collection';
+type View = 'scan' | 'collection' | 'game';
 
-const initialView = (): View => (window.location.hash === '#collection' ? 'collection' : 'scan');
+const initialView = (): View => (window.location.hash === '#collection' ? 'collection' : window.location.hash === '#game' ? 'game' : 'scan');
 
 export function App() {
   const [view, setView] = useState<View>(initialView);
@@ -30,6 +33,8 @@ export function App() {
   const token = useToken();
   const stats = useStats(meta.isSuccess && (!meta.data.accounts || !!token));
   const [localeId, setLocale] = useState(getLocaleId);
+  const player = usePlayer();
+  const qc = useQueryClient();
 
   if (meta.data) setCurrency(meta.data.currency);
 
@@ -37,7 +42,7 @@ export function App() {
     Sound.play('select');
     closeMenus();
     setView(v);
-    window.history.replaceState(null, '', v === 'scan' ? window.location.pathname : '#collection');
+    window.history.replaceState(null, '', v === 'scan' ? window.location.pathname : `#${v}`);
   }, []);
 
   const closeDetail = useCallback(() => setDetail(null), []);
@@ -80,9 +85,21 @@ export function App() {
         <nav className="tabs" aria-label="Views">
           <button className={`tab${view === 'scan' ? ' active' : ''}`} onClick={() => go('scan')} aria-current={view === 'scan'} title="Scan new items with the camera or by uploading photos">SCAN</button>
           <button className={`tab${view === 'collection' ? ' active' : ''}`} onClick={() => go('collection')} aria-current={view === 'collection'} title="Browse, search and manage your saved cards">COLLECTION</button>
+          <button className={`tab${view === 'game' ? ' active' : ''}`} onClick={() => go('game')} aria-current={view === 'game'} title="Quests, badges, dex progress and the leaderboard">GAME</button>
         </nav>
 
         <div className="hud">
+          <input
+            key={player}
+            className="player-name"
+            defaultValue={player}
+            placeholder="TRAINER NAME"
+            maxLength={24}
+            title="Your name for XP and the leaderboard: edit it any time (no login)"
+            aria-label="Your name"
+            onBlur={(e) => { if (e.target.value.trim() !== player) { setPlayerName(e.target.value); qc.invalidateQueries({ queryKey: ['game'] }); } }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          />
           <div className="hud-stat" title="Number of items in your collection"><span>ITEMS</span><b>{stats.data?.total ?? 0}</b></div>
           <div className="hud-stat" title="Estimated resale value of everything in your collection (only items priced in the service currency are added)"><span>TOTAL VALUE</span><b>{money(stats.data?.total_value ?? 0)}</b></div>
           <div className={`hud-led ${led[0]}`} title={h ? `Model: ${h.model || 'not set'} · Price search: ${h.search == null ? 'off' : h.search ? 'online' : 'offline'}` : 'AI status'}><i /><span>{led[1]}</span></div>
@@ -111,6 +128,7 @@ export function App() {
 
       <main>
         <ScanView active={view === 'scan'} keysEnabled={!detail} />
+        <GameView active={view === 'game'} onOpen={(i) => { Sound.play('select'); setDetail(i); }} />
         <CollectionView active={view === 'collection'} onOpen={(i) => { Sound.play('select'); setDetail(i); }} onGoScan={() => go('scan')} />
       </main>
 
@@ -118,6 +136,7 @@ export function App() {
       <nav className="bottom-nav" aria-label="Views">
         <button className={view === 'scan' ? 'active' : ''} onClick={() => go('scan')} title="Scan new items"><b>◉</b>SCAN</button>
         <button className={view === 'collection' ? 'active' : ''} onClick={() => go('collection')} title="Your collection"><b>▦</b>DEX</button>
+        <button className={view === 'game' ? 'active' : ''} onClick={() => go('game')} title="Quests and badges"><b>★</b>GAME</button>
       </nav>
 
       {detail && <DetailModal key={detail.id} initial={detail} onClose={closeDetail} />}

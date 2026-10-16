@@ -151,6 +151,26 @@ const MIGRATIONS: { id: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: '004_game',
+    sql: `
+      -- Gamification: every point is an event; XP, streaks, karma and the leaderboard are sums over it.
+      -- Players are just names typed in the top bar (no login). ref makes an award idempotent.
+      CREATE TABLE IF NOT EXISTS game_events (
+        id           bigserial PRIMARY KEY,
+        household_id uuid NOT NULL REFERENCES households(id),
+        player       text NOT NULL,
+        kind         text NOT NULL,
+        pts          integer NOT NULL,
+        ref          text NOT NULL DEFAULT '',
+        at           timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS game_events_ref_idx ON game_events (household_id, player, kind, ref) WHERE ref <> '';
+      CREATE INDEX IF NOT EXISTS game_events_player_idx ON game_events (household_id, player, at DESC);
+      INSERT INTO game_events (household_id, player, kind, pts, ref, at)
+        SELECT household_id, 'Trainer', 'add', 10, id::text, created_at FROM items;
+    `,
+  },
 ];
 
 const LOCK_ID = 7_210_001; // advisory lock so parallel instances don't migrate twice

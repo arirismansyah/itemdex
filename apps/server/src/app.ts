@@ -24,6 +24,7 @@ import { checkPrice, SearchClient } from './pricing.js';
 import { toCsv, toHtml } from './report.js';
 import { autostartSearch } from './searxng.js';
 import { Settings } from './settings.js';
+import { Game, POINTS, quality } from './game.js';
 import { DEFAULT_HOUSEHOLD, ItemsRepo, type ImageBlob } from './repo.js';
 
 export { loadConfig, type Config } from './config.js';
@@ -84,6 +85,7 @@ export interface ServerHandle {
 export async function buildApp(config: Config, db = createPool(config.databaseUrl, config.dbPoolMax)) {
   const llm = new LlmClient({ ...config.llm, language: config.language, currency: config.currency, market: config.market });
   const repo = new ItemsRepo(db, config.currency);
+  const game = new Game(db, config.currency);
   const accounts = config.accounts ? new Accounts(db) : null;
   const settings = new Settings(db);
   let aiSource: AiConfig['source'] = llm.configured ? 'env' : 'none';
@@ -126,7 +128,7 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
     await app.register(cors, {
       origin: config.corsOrigins.includes('*') ? true : config.corsOrigins,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Player'],
       maxAge: 600,
     });
   }
@@ -451,6 +453,26 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
 
       p.get('/items/:id', async (req) => ({ item: await owned(req) }));
 
+      // Gamification (no login): the player is the name typed in the app's top bar.
+      const playerOf = (req: FastifyRequest) => cleanText(req.headers['x-player'], 24) || 'Trainer';
+      const award = (req: FastifyRequest, kind: string, pts: number, ref = '') =>
+        game.award(req.hid, playerOf(req), kind, pts, ref);
+
+      p.get('/game', async (req) => game.state(req.hid, playerOf(req), await repo.all(req.hid, urlFor(req))));
+      p.get('/game/guess', async (req) => {
+        const id = await game.guessItem(req.hid);
+        const item = id && (await repo.get(req.hid, id, urlFor(req)));
+        if (!item) return { item: null };
+        return { item: { id: item.id, name: item.name, thumb_url: item.thumb_url, currency: item.currency || config.currency } };
+      });
+      p.post('/game/guess', async (req) => {
+        const b = (req.body || {}) as Record<string, unknown>;
+        if (typeof b.id !== 'string' || !UUID_RE.test(b.id)) throw notFound();
+        const item = await repo.get(req.hid, b.id, urlFor(req));
+        if (!item) throw notFound();
+        return game.guess(req.hid, playerOf(req), item, wholeNumber(b.guess, 1e13));
+      });
+
       p.post('/items', async (req, reply) => {
         const body = (req.body || {}) as Record<string, unknown>;
         if (!body.card || typeof body.card !== 'object') throw bad('Missing "card" object');
@@ -462,6 +484,7 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
           currency: currencyOf(body.currency),
           location: await reverseGeocode(cleanLocation(body.location), config.reverseGeocode),
         }, urlFor(req));
+        await award(req, 'add', POINTS.add, item.id);
         if (body.purchase && typeof body.purchase === 'object') {
           item = (await savePurchase(req, item.id, body.purchase as Record<string, unknown>)) ?? item;
         }
@@ -474,6 +497,7 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         const prev = await owned(req);
         const item = await repo.update(req.hid, prev.id, normalizeCard(mergeCard(prev, patch)), urlFor(req));
         if (!item) throw notFound();
+        if (quality(item) === 100) await award(req, 'complete', POINTS.complete, item.id);
         return { item };
       };
       p.patch('/items/:id', updateItem);
@@ -514,12 +538,17 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         return { item };
       });
       p.delete('/items/:id/lend', async (req) => {
+        const lent = (await owned(req)).lent;
+        if (lent) {
+          const late = !!lent.due && lent.due < new Date().toISOString().slice(0, 10);
+          await award(req, 'return', late ? POINTS.return_late : POINTS.return_ok, `${req.url.split('?')[0]}:${lent.at}`);
+        }
         const item = await repo.setJson(req.hid, idParam(req), 'lent', null, urlFor(req));
         if (!item) throw notFound();
         return { item };
       });
 
-      const savePurchase = (req: FastifyRequest, id: string, b: Record<string, unknown>) => {
+      const savePurchase = async (req: FastifyRequest, id: string, b: Record<string, unknown>) => {
         const date = iso(b.date);
         const months = wholeNumber(b.warranty_months, 240);
         const until = date && months ? new Date(`${date}T00:00:00Z`) : null;
@@ -528,7 +557,12 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
           store: cleanText(b.store, 80), date, price: wholeNumber(b.price, 1e13), warranty_months: months,
           warranty_until: until ? until.toISOString().slice(0, 10) : null,
         };
-        return repo.setJson(req.hid, id, 'purchase', purchase, urlFor(req));
+        const saved = await repo.setJson(req.hid, id, 'purchase', purchase, urlFor(req));
+        if (saved) {
+          await award(req, 'receipt', POINTS.receipt, id);
+          if (quality(saved) === 100) await award(req, 'complete', POINTS.complete, id);
+        }
+        return saved;
       };
       p.put('/items/:id/purchase', async (req) => {
         const item = await savePurchase(req, idParam(req), (req.body || {}) as Record<string, unknown>);
