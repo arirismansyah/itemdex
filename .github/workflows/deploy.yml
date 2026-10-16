@@ -41,6 +41,7 @@ jobs:
           docker push $IMAGE
 
       - name: Deploy to Cloud Run
+        id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: ${{ env.SERVICE_NAME }}
@@ -62,3 +63,6 @@ jobs:
             LLM_API_KEY=${{ secrets.LLM_API_KEY || 'sk-9router' }}
             LLM_MODEL=${{ secrets.LLM_MODEL || 'ag/gemini-3-flash' }}
             DB_POOL_MAX=2
+
+      - name: Show Cloud Run URL
+        run: echo "Itemdex is live at ${{ steps.deploy.outputs.url }}" >> $GITHUB_STEP_SUMMARY
