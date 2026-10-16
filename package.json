@@ -25,6 +25,7 @@
     "predist:desktop": "node scripts/check-node.cjs",
     "dist:desktop": "npm run build -w @itemdex/web && npm run dist -w @itemdex/desktop",
     "db:migrate": "npm run migrate -w @itemdex/server",
+    "db:seed-dummy": "npm run seed-dummy -w @itemdex/server --",
     "db:import-legacy": "npm run import-legacy -w @itemdex/server --",
     "typecheck": "tsc -p packages/shared && tsc -p apps/server && tsc -p apps/web && tsc -p apps/desktop"
   },

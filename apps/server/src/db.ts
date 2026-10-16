@@ -171,6 +171,14 @@ const MIGRATIONS: { id: string; sql: string }[] = [
         SELECT household_id, 'Trainer', 'add', 10, id::text, created_at FROM items;
     `,
   },
+  {
+    id: '005_dummy_flag',
+    sql: `
+      -- Demo rows are flagged so they can be removed in one go: npm run db:seed-dummy -- --remove
+      ALTER TABLE items ADD COLUMN IF NOT EXISTS dummy boolean NOT NULL DEFAULT false;
+      ALTER TABLE game_events ADD COLUMN IF NOT EXISTS dummy boolean NOT NULL DEFAULT false;
+    `,
+  },
 ];
 
 const LOCK_ID = 7_210_001; // advisory lock so parallel instances don't migrate twice

@@ -13,6 +13,7 @@
     "start": "node dist/index.js",
     "migrate": "tsx src/migrate.ts",
     "import-legacy": "tsx scripts/import-legacy.ts",
+    "seed-dummy": "tsx scripts/seed-dummy.ts",
     "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
