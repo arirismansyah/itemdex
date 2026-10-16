@@ -667,7 +667,7 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
   // ------------------------------------------------------------- web app
   if (config.webDist && fs.existsSync(path.join(config.webDist, 'index.html'))) {
     const csp = [
-      "default-src 'self'", "img-src 'self' data: blob:", "media-src 'self' blob:",
+      "default-src 'self'", "img-src 'self' data: blob: https://images.pexels.com", "media-src 'self' blob:",
       "style-src 'self' 'unsafe-inline'", "font-src 'self' data:", "connect-src 'self'", "script-src 'self'",
       "object-src 'none'", "base-uri 'self'",
     ].join('; ');

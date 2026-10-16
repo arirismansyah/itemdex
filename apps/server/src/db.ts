@@ -179,6 +179,13 @@ const MIGRATIONS: { id: string; sql: string }[] = [
       ALTER TABLE game_events ADD COLUMN IF NOT EXISTS dummy boolean NOT NULL DEFAULT false;
     `,
   },
+  {
+    id: '006_image_src',
+    sql: `
+      -- An external picture URL (used by the dummy data) shown when the item has no stored image.
+      ALTER TABLE items ADD COLUMN IF NOT EXISTS image_src text NOT NULL DEFAULT '';
+    `,
+  },
 ];
 
 const LOCK_ID = 7_210_001; // advisory lock so parallel instances don't migrate twice

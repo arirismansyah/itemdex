@@ -18,6 +18,16 @@ const remove = () => Promise.all([
   db.query('DELETE FROM items WHERE dummy'), // images, locations and value history cascade
 ]);
 
+// Pexels photo ids (free licence); '' = no good match, a generated placeholder is used instead.
+const PHOTOS: Record<string, string> = {
+  'Air Fryer': '29461935', 'Cast Iron Pan': '5639274', 'Blender': '6824660', 'Electric Kettle': '15206538',
+  'Mechanical Keyboard': '2582938', 'Noise-Cancelling Headphones': '7054538', 'Smartphone': '3571094',
+  'Desk Lamp': '1112598', 'Vintage Vinyl Player': '10676939', 'Acoustic Guitar': '1010519',
+  'Board Game Set': '8111367', 'Road Bike': '5807754', 'Cordless Drill': '30413424', 'Toolbox': '9606740',
+  'Running Shoes': '8858120', 'Leather Jacket': '18720773', 'Paperback Novel': '775998',
+};
+const photoUrl = (id: string) => `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=600`;
+
 const ITEMS: [string, string, string, string, number, string][] = [
   // name, type, rarity, room, price, tags
   ['Air Fryer', 'KITCHEN', 'UNCOMMON', 'Kitchen', 850000, 'cooking,appliance'],
@@ -50,7 +60,8 @@ const PLAYERS: [string, number, number][] = [
 try {
   await migrate(db);
   if (process.argv.includes('--if-missing')
-    && (await db.query('SELECT 1 FROM items WHERE dummy UNION ALL SELECT 1 FROM game_events WHERE dummy LIMIT 1')).rowCount) {
+    // photos were added later: dummy data from before that is replaced
+    && (await db.query(`SELECT 1 FROM items WHERE dummy AND image_src <> '' LIMIT 1`)).rowCount) {
     console.log('dummy data already present, skipping');
     process.exit(0);
   }
@@ -65,11 +76,13 @@ try {
         name, type, rarity, subcategory: i % 4 ? name.split(' ').pop() : '', description: `Demo ${name}`,
         tags: tags ? tags.split(',') : [], value: { min: price * 0.8, max: price * 1.2, typical: price, new_price: price * 1.3 },
       });
-      // Placeholder picture (SVG with the name) so Guess the Price has something to show.
+      // Pexels photo by URL; items without a match get a generated SVG so Guess the Price still has a picture.
+      const photo = PHOTOS[name];
       const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360"><rect width="360" height="360" fill="hsl(${i * 37} 45% 30%)"/><text x="180" y="190" font-size="28" text-anchor="middle" fill="#fff" font-family="monospace">${name}</text></svg>`);
       const pic = { mime: 'image/svg+xml', data: svg };
       const item = await repo.create(DEFAULT_HOUSEHOLD, card,
-        { source: 'photo', image: pic, thumb: pic, location: { place: room, lat: null, lng: null, accuracy_m: null, source: 'manual', address: '' } }, url);
+        { source: 'photo', image: photo ? null : pic, thumb: photo ? null : pic, location: { place: room, lat: null, lng: null, accuracy_m: null, source: 'manual', address: '' } }, url);
+      if (photo) await db.query('UPDATE items SET image_src = $2 WHERE id = $1', [item.id, photoUrl(photo)]);
       ids.push(item.id);
     }
     await db.query('UPDATE items SET dummy = true WHERE id = ANY($1)', [ids]);

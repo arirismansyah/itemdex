@@ -132,7 +132,7 @@ export class Game {
   // One random photographed item (without its price) from this household.
   async guessItem(hid: string): Promise<string | null> {
     const { rows } = await this.db.query(
-      `SELECT id FROM items WHERE household_id = $1 AND has_image AND value_typical > 0
+      `SELECT id FROM items WHERE household_id = $1 AND (has_image OR image_src <> '') AND value_typical > 0
          AND currency IN ('', $2) ORDER BY random() LIMIT 1`, [hid, this.base]);
     return rows[0]?.id ?? null;
   }

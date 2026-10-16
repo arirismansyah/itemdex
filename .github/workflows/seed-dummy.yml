@@ -1,14 +1,14 @@
 name: Seed dummy data
 
 # Adds the flagged demo items / leaderboard players to the production database, once.
-# Runs automatically when this file changes (e.g. the push that adds it) or by hand from the Actions tab.
+# Runs automatically when this file or the seed script changes or by hand from the Actions tab.
 # Safe to repeat: --if-missing skips when dummy rows already exist.
 # Remove the data later: run `npm run db:seed-dummy -- --remove` with the production DATABASE_URL.
 
 on:
   push:
     branches: [ master ]
-    paths: [ '.github/workflows/seed-dummy.yml' ]
+    paths: [ '.github/workflows/seed-dummy.yml', 'apps/server/scripts/seed-dummy.ts' ]
   workflow_dispatch:
 
 concurrency: seed-dummy

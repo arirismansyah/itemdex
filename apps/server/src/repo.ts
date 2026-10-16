@@ -53,7 +53,7 @@ const FLAG_SQL: Record<Flag, string> = {
 
 const ITEM_COLUMNS = `id, number, name, brand, model, type, rarity, subcategory, description, color,
   material, size_class, weight_g, dimensions, condition, value, abilities, tags, location_guess,
-  is_item, source, location, has_image, currency, lent, purchase, comps, ${SELL_NOW} AS sell_now,
+  is_item, source, location, has_image, image_src, currency, lent, purchase, comps, ${SELL_NOW} AS sell_now,
   created_at, updated_at`;
 
 // Builds an absolute URL for a server path (image links must work cross-origin).
@@ -100,8 +100,8 @@ function toItem(row: any, url: UrlFor, base: string, history: ItemLocation[] = [
     comps: row.comps ?? null,
     value_history: values,
     sell_now: !!row.sell_now,
-    image_url: row.has_image ? url(`/media/${row.id}`) : null,
-    thumb_url: row.has_image ? url(`/media/${row.id}/thumb`) : null,
+    image_url: row.has_image ? url(`/media/${row.id}`) : row.image_src || null,
+    thumb_url: row.has_image ? url(`/media/${row.id}/thumb`) : row.image_src || null,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
   };
