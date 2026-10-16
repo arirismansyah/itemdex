@@ -58,7 +58,7 @@ jobs:
             NODE_ENV=production
             HOST=0.0.0.0
             DATABASE_URL=${{ secrets.DATABASE_URL }}
-            LLM_API_BASE=https://generativelanguage.googleapis.com/v1beta/openai
-            LLM_API_KEY=${{ secrets.GEMINI_API_KEY }}
-            LLM_MODEL=gemini-2.0-flash
+            LLM_API_BASE=${{ secrets.LLM_API_BASE }}
+            LLM_API_KEY=${{ secrets.LLM_API_KEY || 'sk-9router' }}
+            LLM_MODEL=${{ secrets.LLM_MODEL || 'ag/gemini-3-flash' }}
             DB_POOL_MAX=2
