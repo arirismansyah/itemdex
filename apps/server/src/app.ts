@@ -19,7 +19,7 @@ import type { Config } from './config.js';
 import { createPool, migrate, type Db } from './db.js';
 import { LlmClient, LlmError, cleanBaseUrl } from './llm.js';
 import { cleanLocation, reverseGeocode } from './geo.js';
-import { parsePdfInvoice } from './invoice.js';
+import { parsePdfInvoice, parseInvoiceImage, PdfInvoiceError } from './invoice.js';
 import { checkPrice, SearchClient } from './pricing.js';
 import { toCsv, toHtml } from './report.js';
 import { autostartSearch } from './searxng.js';
@@ -43,7 +43,7 @@ declare module 'fastify' {
   }
 }
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(public status: number, public code: string, message: string) {
     super(message);
   }
@@ -133,6 +133,7 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
 
   app.setErrorHandler((err: Error & { statusCode?: number; code?: string }, req, reply) => {
     if (err instanceof HttpError) return reply.status(err.status).send({ error: err.message, code: err.code });
+    if (err instanceof PdfInvoiceError) return reply.status(err.status).send({ error: err.message, code: err.code });
     if (err instanceof AuthError) return reply.status(err.status).send({ error: err.message, code: 'auth_error' });
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {
       return reply.status(504).send({ error: 'The AI took too long to respond. Try again.', code: 'llm_timeout' });
@@ -288,16 +289,24 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         return { items, currency: locale.currency, elapsed_ms: Date.now() - started };
       });
 
-      // Digital PDF invoice -> cards for each item purchased (NOT saved; POST /items for each).
+      // Digital or scanned PDF / image invoice -> cards for each item purchased (NOT saved; POST /items for each).
       p.post('/scan/pdf', async (req) => {
-        const body = (req.body || {}) as { pdf?: unknown; hint?: unknown; locale?: unknown };
-        if (typeof body.pdf !== 'string') throw bad('"pdf" data URL is required');
-        const m = /^data:application\/pdf;base64,(.+)$/s.exec(body.pdf);
-        if (!m) throw bad('"pdf" must be a data:application/pdf;base64,... URL');
+        const body = (req.body || {}) as { pdf?: unknown; image?: unknown; document?: unknown; hint?: unknown; locale?: unknown; [k: string]: unknown };
+        const doc = (typeof body.document === 'string' && body.document)
+          || (typeof body.pdf === 'string' && body.pdf)
+          || (typeof body.image === 'string' && body.image);
+        if (!doc) throw bad('"pdf", "image", or "document" data URL is required');
+        const locale = localeOf(body.locale || { language: body.language, currency: body.currency, market: body.market });
+        const hint = cleanText(body.hint, 300);
+
+        if (/^data:image\/(png|jpe?g|webp|bmp);base64,/i.test(doc)) {
+          return parseInvoiceImage(doc, llm, locale, hint);
+        }
+
+        const m = /^data:application\/pdf;base64,(.+)$/s.exec(doc);
+        if (!m) throw bad('Document must be a valid data:application/pdf;base64,... or data:image/... URL');
         const buf = Buffer.from(m[1], 'base64');
-        const uint8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-        const locale = localeOf(body.locale);
-        return parsePdfInvoice(uint8, llm, locale, cleanText(body.hint, 300));
+        return parsePdfInvoice(buf, llm, locale, hint);
       });
 
       // Natural-language search -> filters the client applies to GET /items.

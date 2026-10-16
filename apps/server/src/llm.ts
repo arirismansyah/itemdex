@@ -421,6 +421,10 @@ export class LlmClient {
     return this.structured(messages, name, schema, opts);
   }
 
+  async structuredVision(system: string, text: string, images: string[], name: string, schema: Json, opts?: { maxTokens?: number; temperature?: number }): Promise<Json> {
+    return this.structured(this.imageMessage(system, text, images), name, schema, opts);
+  }
+
   // images: data URLs (image/jpeg, image/png or image/webp)
   async analyze(images: string[], { hint = '', isVideo = false, locale }: { hint?: string; isVideo?: boolean; locale?: Locale } = {}): Promise<Json> {
     const intro = isVideo

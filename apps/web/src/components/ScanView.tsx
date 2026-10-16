@@ -278,64 +278,151 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
   }, [active, keysEnabled, snapNow]);
 
   // ------------------------------------------------------------- uploads
+  const addInvoiceFiles = async (fileList: FileList | File[]) => {
+    const list = [...fileList];
+    if (!list.length) return;
+    try {
+      setScanning(true);
+      camRef.current?.setPaused(true);
+      showPreview(null);
+      setRoom(null);
+      say(`Processing ${list.length} invoice/receipt file(s)...`, { hold: 2500 });
+
+      const allItems: RoomView['items'] = [];
+      let lastCurrency = 'IDR';
+
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i];
+        say(`Reading invoice ${i + 1} of ${list.length}: ${file.name}...`, { hold: 2000 });
+        const dataUrl = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+          ? await Media.fileToDataUrl(file)
+          : await Media.imageFileToDataUrl(file);
+
+        const res = await scanPdf(dataUrl, live.current.hint);
+        if (res.currency) lastCurrency = res.currency;
+        for (const it of res.items) {
+          allItems.push({
+            card: it.card,
+            crop: file.type.startsWith('image/') ? dataUrl : Media.makePlaceholderCardImage(it.card.name),
+            on: true,
+            purchase: { store: it.store, date: it.date, price: it.price },
+          });
+        }
+      }
+
+      if (!allItems.length) {
+        throw new Error('No items identified in the uploaded invoice(s).');
+      }
+
+      setRoom({
+        currency: lastCurrency,
+        items: allItems,
+      });
+      setSource('photo');
+      setScanning(false);
+      Sound.play('get');
+      say(`Found ${allItems.length} item(s) across ${list.length} document(s)!`, { sound: 'select', hold: 4000 });
+      stageRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      setScanning(false);
+      camRef.current?.setPaused(false);
+      say(`Invoice failed: ${(err as Error).message}`, { sound: 'error', hold: 5000 });
+    }
+  };
+
   const addFiles = async (fileList: FileList | File[]) => {
     const list = [...fileList];
     if (!list.length) return;
-    const pdf = list.find((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+
+    // Route PDF or invoice-named files to invoice parser
+    const isInvoiceBatch = list.some((f) =>
+      f.type === 'application/pdf' ||
+      /\.pdf$/i.test(f.name) ||
+      /invoice|receipt|struk|nota|tokopedia|shopee/i.test(f.name)
+    );
+    if (isInvoiceBatch) {
+      return addInvoiceFiles(list);
+    }
+
     const video = list.find((f) => f.type.startsWith('video/'));
-    try {
-      if (pdf) {
-        say('Reading PDF invoice text...', { hold: 2000 });
-        setScanning(true);
-        camRef.current?.setPaused(true);
+    if (video) {
+      try {
+        say('Extracting frames from video...', { hold: 1500 });
+        const next = await Media.videoFileToFrames(video, 4);
+        setSource('video');
+        setGeo(null);
+        setFrames(next);
         showPreview(null);
-        setRoom(null);
-        const dataUrl = await Media.fileToDataUrl(pdf);
-        const res = await scanPdf(dataUrl, live.current.hint);
-        if (!res.items.length) {
-          throw new Error('No items identified in invoice.');
-        }
-        setRoom({
-          currency: res.currency,
-          items: res.items.map((it) => ({
-            card: it.card,
-            crop: Media.makePlaceholderCardImage(it.card.name),
-            on: true,
-            purchase: { store: it.store, date: it.date, price: it.price },
-          })),
-        });
+        Sound.play('select');
+      } catch (err) {
+        say((err as Error).message, { sound: 'error' });
+      }
+      return;
+    }
+
+    const images = list.filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp)$/i.test(f.name));
+    if (!images.length) return;
+
+    try {
+      setScanning(true);
+      camRef.current?.setPaused(true);
+      showPreview(null);
+      setRoom(null);
+
+      // Single item photo -> trigger AI scan immediately
+      if (images.length === 1) {
+        const file = images[0];
+        say(`Scanning item photo ${file.name}...`, { hold: 2000 });
+        const dataUrl = await Media.imageFileToDataUrl(file);
+        let nextGeo = live.current.geo;
+        const gps = await Media.readExifGps(file);
+        if (gps) nextGeo = { ...gps, accuracy_m: null, source: 'exif' };
+        setGeo(nextGeo);
+        setFrames([dataUrl]);
         setSource('photo');
-        setScanning(false);
-        Sound.play('fanfare');
-        say(`Invoice read! Found ${res.items.length} item(s) from ${res.store || 'store'}.`, { sound: 'select', hold: 4000 });
-        stageRef.current?.scrollIntoView({ behavior: 'smooth' });
+        await runScan([dataUrl], 'photo');
         return;
       }
-      let next: string[];
-      let nextGeo = live.current.geo;
-      if (video) {
-        say('Extracting frames from video...', { hold: 1500 });
-        next = await Media.videoFileToFrames(video, 4);
-        setSource('video');
-      } else {
-        const images = list.filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp)$/i.test(f.name));
-        next = live.current.source === 'photo' ? [...live.current.frames] : [];
-        if (live.current.source !== 'photo') nextGeo = null;
-        for (const f of images.slice(0, MAX_FRAMES - next.length)) {
-          next.push(await Media.imageFileToDataUrl(f));
-          if (!nextGeo) {
-            const gps = await Media.readExifGps(f);
-            if (gps) nextGeo = { ...gps, accuracy_m: null, source: 'exif' };
-          }
+
+      // Batch upload: multiple item photos -> scan each and aggregate into room grid
+      say(`Batch scanning ${images.length} item photos...`, { hold: 3000 });
+      const batchItems: RoomView['items'] = [];
+      let detectedCurrency = 'IDR';
+
+      for (let i = 0; i < images.length; i++) {
+        const file = images[i];
+        say(`Analyzing item ${i + 1} of ${images.length}: ${file.name}...`, { hold: 2000 });
+        const dataUrl = await Media.imageFileToDataUrl(file);
+        try {
+          const res = await scanApi({ images: [dataUrl], hint: live.current.hint, source: 'photo' });
+          if (res.currency) detectedCurrency = res.currency;
+          batchItems.push({
+            card: res.card,
+            crop: dataUrl,
+            on: true,
+          });
+        } catch (itemErr) {
+          console.warn(`Failed scanning item ${file.name}:`, itemErr);
         }
-        setSource('photo');
       }
-      setGeo(nextGeo);
-      setFrames(next);
-      showPreview(null);
-      Sound.play('select');
+
+      if (!batchItems.length) {
+        throw new Error('Could not identify items in the uploaded photos.');
+      }
+
+      setRoom({
+        currency: detectedCurrency,
+        items: batchItems,
+      });
+      setSource('photo');
+      setScanning(false);
+      Sound.play('get');
+      say(`Batch scan complete! Found ${batchItems.length} items. Select and register to Dex.`, { sound: 'select', hold: 4000 });
+      stageRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
-      say((err as Error).message, { sound: 'error' });
+      setScanning(false);
+      camRef.current?.setPaused(false);
+      say(`Upload failed: ${(err as Error).message}`, { sound: 'error' });
     }
   };
 
@@ -484,13 +571,13 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
           <div className="upload-group">
             <button className="btn btn-small" onClick={() => { Sound.play('click'); photoInput.current?.click(); }} title="Upload one or more photos of the item (JPG, PNG, WEBP)">⇪ PHOTO</button>
             <button className="btn btn-small" onClick={() => { Sound.play('click'); videoInput.current?.click(); }} title="Upload a short video; the app takes 4 frames from it">⇪ VIDEO</button>
-            <button className="btn btn-small btn-accent" onClick={() => { Sound.play('click'); pdfInput.current?.click(); }} title="Upload an e-commerce PDF invoice (Tokopedia, Shopee, etc.) to catalogue purchased items" style={{ marginLeft: 6 }}>⇪ INVOICE</button>
+            <button className="btn btn-small btn-accent" onClick={() => { Sound.play('click'); pdfInput.current?.click(); }} title="Upload an invoice or receipt (PDF, PNG, JPG) to catalogue purchased items" style={{ marginLeft: 6 }}>⇪ INVOICE</button>
             {!usingCamera && <button className="btn btn-small" onClick={backToCamera} title="Drop the uploaded pictures and use the live camera">◉ CAMERA</button>}
           </div>
         </div>
         <input ref={photoInput} type="file" accept="image/*" multiple hidden onChange={(e) => { void addFiles(e.target.files || []); e.target.value = ''; }} />
         <input ref={videoInput} type="file" accept="video/*" hidden onChange={(e) => { void addFiles(e.target.files || []); e.target.value = ''; }} />
-        <input ref={pdfInput} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { void addFiles(e.target.files || []); e.target.value = ''; }} />
+        <input ref={pdfInput} type="file" accept="application/pdf,.pdf,image/*" multiple hidden onChange={(e) => { void addInvoiceFiles(e.target.files || []); e.target.value = ''; }} />
 
         <div className="field-row">
           <label className="field" title="Anything the picture cannot show (age, flaws, accessories). The AI reads it with the photo">
