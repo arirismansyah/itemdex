@@ -10,14 +10,14 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import {
   CONDITIONS, FLAGS, PLATFORMS, RARITIES, SIZE_CLASSES, SORTS, SOURCES, TYPES,
-  mergeCard, normalizeCard, type AiConfig, type AiTest, type AskFilters, type AuthUser, type Flag, type Locale, type Platform,
+  mergeCard, normalizeCard, shopeeQuery, type AiConfig, type AiTest, type AskFilters, type AuthUser, type Flag, type Locale, type Platform,
   type Purchase, type Sort, type Source,
 } from '@itemdex/shared';
 import { Accounts, AuthError } from './auth.js';
-import { connected, disconnect, fetchComps, loginStatus, startLogin } from './comps.js';
+import { compsFromListings, connected, matcher, disconnect, fetchComps, loginStatus, startLogin } from './comps.js';
 import type { Config } from './config.js';
 import { createPool, migrate, type Db } from './db.js';
-import { LlmClient, LlmError, cleanBaseUrl } from './llm.js';
+import { LlmClient, LlmError, cleanBaseUrl, readListingShots } from './llm.js';
 import { cleanLocation, reverseGeocode } from './geo.js';
 import { parsePdfInvoice, parseInvoiceImage, PdfInvoiceError } from './invoice.js';
 import { checkPrice, SearchClient } from './pricing.js';
@@ -470,7 +470,9 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         if (typeof b.id !== 'string' || !UUID_RE.test(b.id)) throw notFound();
         const item = await repo.get(req.hid, b.id, urlFor(req));
         if (!item) throw notFound();
-        return game.guess(req.hid, playerOf(req), item, wholeNumber(b.guess, 1e13));
+        const guess = wholeNumber(b.guess, 1e13);
+        if (!guess) throw bad('"guess" must be a positive number');
+        return game.guess(req.hid, playerOf(req), item, guess);
       });
 
       p.post('/items', async (req, reply) => {
@@ -541,7 +543,7 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         const lent = (await owned(req)).lent;
         if (lent) {
           const late = !!lent.due && lent.due < new Date().toISOString().slice(0, 10);
-          await award(req, 'return', late ? POINTS.return_late : POINTS.return_ok, `${req.url.split('?')[0]}:${lent.at}`);
+          await award(req, 'return', late ? POINTS.return_late : POINTS.return_ok, `${idParam(req)}:${lent.at}`);
         }
         const item = await repo.setJson(req.hid, idParam(req), 'lent', null, urlFor(req));
         if (!item) throw notFound();
@@ -599,19 +601,26 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         };
       });
 
-      // Check the value against current Shopee listings (needs a connected session); updates it when 3+ match.
+      // Check the value against current Shopee listings; updates it when 3+ match.
+      // Body { listings } = the check ran in the user's browser; empty body = read Shopee from this machine
+      // (needs a connected session).
       p.post('/items/:id/comps', async (req) => {
-        if (!connected(config.shopee)) throw new HttpError(409, 'not_connected', 'Connect Shopee from the menu to check prices; until then the value stays the AI estimate');
+        const b = (req.body || {}) as { listings?: unknown; query?: unknown };
+        const fromBrowser = Array.isArray(b.listings);
+        if (!fromBrowser && !connected(config.shopee)) {
+          throw new HttpError(409, 'not_connected', 'Open the Shopee search from the item and send the listings back with the ITEMDEX bookmark');
+        }
         const prev = await owned(req);
         if (prev.currency !== 'IDR') throw bad('Shopee prices are in IDR; this item is priced in another currency');
-        const query = [prev.brand, prev.model || prev.name].filter(Boolean).join(' ');
+        // The owner may have refined the search on Shopee; otherwise brand + model.
+        const query = cleanText(b.query, 100) || shopeeQuery(prev);
         let comps;
         try {
-          comps = await fetchComps(query, config.shopee);
+          comps = fromBrowser ? compsFromListings(query, b.listings, config.shopee.discount) : await fetchComps(query, config.shopee);
         } catch (err) {
           throw new HttpError(502, 'comps_error', (err as Error).message);
         }
-        if (!comps) throw new HttpError(404, 'no_comps', `No Shopee listings found for "${query}"`);
+        if (!comps) throw new HttpError(404, 'no_comps', `No Shopee listings matching "${query}"`);
         let item = prev;
         if (comps.n >= 3) {
           const value = {
@@ -623,6 +632,25 @@ export async function buildApp(config: Config, db = createPool(config.databaseUr
         }
         const saved = await repo.setJson(req.hid, prev.id, 'comps', comps, urlFor(req));
         return { item: saved ?? item };
+      });
+
+      // Screenshots of Shopee search results (phones: the Shopee app) -> listings for the user to confirm,
+      // then sent to POST /items/:id/comps like the bookmarklet's. Nothing is saved here.
+      p.post('/items/:id/comps/read', async (req) => {
+        const item = await owned(req);
+        if (item.currency !== 'IDR') throw bad('Shopee prices are in IDR; this item is priced in another currency');
+        const images = validImages((req.body as { images?: unknown })?.images).slice(0, 4);
+        if (!images.length) throw bad('"images" must be 1-4 data:image/... URLs');
+        const raw = await readListingShots(llm, images);
+        if (raw.is_listing_page === false) throw new HttpError(422, 'not_listings', 'The AI found no Shopee search results in those screenshots');
+        const query = shopeeQuery(item);
+        const matches = matcher(query);
+        const listings = (Array.isArray(raw.listings) ? raw.listings : []).slice(0, 80)
+          .map((l: { title?: unknown; price?: unknown }) => ({ title: cleanText(l?.title, 120), price: wholeNumber(l?.price, 1e11) }))
+          .filter((l: { title: string; price: number }) => l.title && l.price >= 1000)
+          .map((l: { title: string; price: number }) => ({ ...l, url: '', match: matches(l.title) }));
+        if (!listings.length) throw new HttpError(404, 'no_comps', 'No prices could be read from those screenshots');
+        return { query, listings };
       });
 
       p.delete('/items/:id', async (req) => {

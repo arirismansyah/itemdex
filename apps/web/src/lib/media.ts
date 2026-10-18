@@ -56,11 +56,11 @@ export async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export async function imageFileToDataUrl(file: File): Promise<string> {
+export async function imageFileToDataUrl(file: File, maxSide = MAX_SIDE): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await loadImage(url);
-    return drawToJpeg(img, img.naturalWidth, img.naturalHeight);
+    return drawToJpeg(img, img.naturalWidth, img.naturalHeight, maxSide);
   } catch {
     throw new Error(`Can't read "${file.name}". Use JPG/PNG/WEBP (HEIC is not supported).`);
   } finally {

@@ -128,6 +128,22 @@ const RECEIPT_SCHEMA = {
   required: ['is_receipt', 'store', 'date', 'total', 'warranty_months'],
 };
 
+const SHOPEE_SHOTS_SCHEMA = {
+  type: 'object',
+  properties: {
+    is_listing_page: { type: 'boolean' },
+    listings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { title: { type: 'string' }, price: { type: 'integer' } },
+        required: ['title', 'price'],
+      },
+    },
+  },
+  required: ['is_listing_page', 'listings'],
+};
+
 const PLATFORM_STYLE: Record<Platform, string> = {
   generic: 'a clear, honest classified ad for any marketplace',
   tokopedia: 'a Tokopedia/Shopee product listing: keyword-rich title (max 70 chars) with brand, model and condition, then short bullet lines (spec, condition, kelengkapan, alasan jual)',
@@ -417,7 +433,7 @@ export class LlmClient {
   }
 
   // Expose structured method for internal modules (like invoice.ts)
-  async structuredText(messages: Message[], name: string, schema: Json, opts?: { maxTokens?: number; temperature?: number }): Promise<Json> {
+  async structuredText(messages: Json[], name: string, schema: Json, opts?: { maxTokens?: number; temperature?: number }): Promise<Json> {
     return this.structured(messages, name, schema, opts);
   }
 
@@ -501,6 +517,17 @@ warranty_months: warranty length in months if the document states one (1 year = 
     return this.structured(
       this.imageMessage(system, 'Read this receipt.', [image]), 'itemdex_receipt', RECEIPT_SCHEMA, { maxTokens: 300, temperature: 0 });
   }
+}
+
+// Screenshots of marketplace search results (Shopee app or web) -> the product cards on them.
+export async function readListingShots(llm: LlmClient, images: string[]): Promise<Json> {
+  const system = `You read screenshots of Shopee Indonesia search results (app or website). Respond with JSON only.
+listings: every product card visible, top to bottom, left to right, each once even if it appears on two screenshots.
+- title: the product title exactly as shown (it may be cut off with "...").
+- price: the price in Rupiah as a whole number without symbols or separators ("Rp1.250.000" = 1250000, "Rp1,2jt" = 1200000, "Rp350rb" = 350000). For a range "Rp100.000 - Rp200.000" use the lower price. Use the current price, not a crossed-out one.
+Skip cards whose price you cannot read. is_listing_page=false and listings=[] if these are not marketplace search results.`;
+  return llm.structuredVision(system, `Read the product listings on these ${images.length} screenshot(s).`, images,
+    'itemdex_shopee_shots', SHOPEE_SHOTS_SCHEMA, { maxTokens: 3000, temperature: 0 });
 }
 
 function parseJson(text: string): Json {

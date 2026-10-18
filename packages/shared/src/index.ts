@@ -299,3 +299,74 @@ export function mergeCard(prev: Card, patch: Loose): Loose {
   }
   return out;
 }
+
+// ---------------------------------------------------------------- Shopee price check
+// The check runs in the user's own browser: ITEMDEX opens the Shopee search, a bookmarklet reads the
+// listings off that page and sends them back. The server only filters and summarizes them.
+
+export const SHOPEE_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*shopee\.co\.id$/;
+export const SHOPEE_MESSAGE = 'itemdex-shopee';
+export interface ShopeeListing { title: string; price: number; url: string }
+
+export const shopeeQuery = (i: Pick<Card, 'brand' | 'model' | 'name'>) => [i.brand, i.model || i.name].filter(Boolean).join(' ');
+// "bekas" = second-hand, so new-price listings rank lower.
+export const shopeeSearchUrl = (query: string) => `https://shopee.co.id/search?keyword=${encodeURIComponent(`${query} bekas`)}`;
+
+// Runs in the Shopee page: every link whose text carries an "Rp" price is a product card.
+// A string so it can go into a bookmarklet and Playwright's page.evaluate alike.
+export const SHOPEE_EXTRACT = `(() => {
+  const out = [], seen = new Set();
+  for (const a of document.querySelectorAll('a[href]')) {
+    const text = a.innerText || '';
+    const m = /Rp\\s?([\\d.]+)/.exec(text);
+    if (!m || seen.has(a.href)) continue;
+    const price = Number(m[1].replace(/\\./g, ''));
+    const title = text.split('\\n').map((s) => s.trim())
+      .filter((l) => l.length > 8 && !/^Rp/.test(l)).sort((x, y) => y.length - x.length)[0];
+    if (price && title) { seen.add(a.href); out.push({ title, price, url: a.href }); }
+  }
+  return out;
+})()`;
+
+// Bookmarklet: posts the listings to the ITEMDEX tab that opened Shopee and closes the Shopee tab;
+// when Shopee cut that link (or the page was opened by hand) it copies them for pasting instead.
+export function shopeeBookmarklet(appOrigin: string): string {
+  const code = `(async () => {
+  if (!/shopee\\.co\\.id$/.test(location.hostname)) return alert('ITEMDEX: open a Shopee search page first');
+  const listings = ${SHOPEE_EXTRACT};
+  if (!listings.length) return alert('ITEMDEX: no listings with a price on this page yet. Scroll a bit and try again.');
+  const msg = { type: '${SHOPEE_MESSAGE}', listings: listings.slice(0, 120) };
+  if (window.opener) {
+    try { window.opener.postMessage(msg, ${JSON.stringify(appOrigin)}); alert('ITEMDEX: sent ' + msg.listings.length + ' listings.'); window.close(); return; } catch (e) {}
+  }
+  const json = JSON.stringify(msg);
+  try { await navigator.clipboard.writeText(json); alert('ITEMDEX: copied ' + msg.listings.length + ' listings. Go back to ITEMDEX and press PASTE.'); }
+  catch (e) { prompt('ITEMDEX: copy this and paste it in ITEMDEX', json); }
+})()`;
+  return `javascript:${encodeURIComponent(code.replace(/\n\s*/g, ' '))}`;
+}
+
+// Pasted text -> listings. Takes the bookmarklet's JSON, or the plain text of a Shopee search page
+// (select all + copy): each "Rp 123.000" is paired with the longest line just above it as the title.
+export function parseShopeePaste(text: string): ShopeeListing[] {
+  try {
+    const j = JSON.parse(text);
+    const arr = Array.isArray(j) ? j : j?.listings;
+    if (Array.isArray(arr)) return arr;
+  } catch { /* plain page text */ }
+  const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const out: ShopeeListing[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^Rp\s?([\d.]+)/.exec(lines[i]) ?? (lines[i] === 'Rp' ? /^([\d.]+)/.exec(lines[i + 1] ?? '') : null);
+    if (!m) continue;
+    const price = Number(m[1].replace(/\./g, ''));
+    const title = lines.slice(Math.max(0, i - 4), i)
+      .filter((l) => l.length > 8 && !/^(Rp|\d)/.test(l) && !/terjual|sold/i.test(l))
+      .sort((a, b) => b.length - a.length)[0];
+    if (!price || !title || seen.has(`${title}|${price}`)) continue;
+    seen.add(`${title}|${price}`);
+    out.push({ title, price, url: '' });
+  }
+  return out;
+}
