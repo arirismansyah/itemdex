@@ -47,7 +47,8 @@ function readMode(): SnapMode {
   try { return localStorage.getItem('itemdex.mode') === 'manual' ? 'manual' : 'auto'; } catch { return 'auto'; }
 }
 
-function statusText(s: LiveStatus, mode: SnapMode, scanning: boolean): string {
+function statusText(s: LiveStatus, mode: SnapMode, scanning: boolean, roomMode = false): string {
+  if (roomMode) return scanning ? 'AI IS SCANNING ROOM...' : 'ROOM MODE · PRESS SNAP OR UPLOAD PHOTO';
   const name = s.name || '';
   const p = Math.round((s.progress || 0) * 8);
   switch (s.phase) {
@@ -178,6 +179,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
         setRoom({ currency: res.currency, items: res.items.map((it, i) => ({ card: it.card, crop: crops[i], on: true })) });
         const extra = src === 'photo' && imgs.length > 1 ? ` Room mode reads one photo: used the first of ${imgs.length}.` : '';
         say(`Found ${res.items.length} items! (${(res.elapsed_ms / 1000).toFixed(1)}s)${extra}`, { sound: 'appear', hold: extra ? 5000 : 3500 });
+        stageRef.current?.scrollIntoView({ behavior: 'smooth' });
         return;
       }
       const res = await scanApi({ images: imgs, hint: live.current.hint, source: src });
@@ -191,7 +193,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
         requestAnimationFrame(() => stageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
     } catch (err) {
-      camRef.current?.setPaused(false);
+      camRef.current?.setPaused(live.current.roomMode);
       say(`Scan failed: ${(err as Error).message}`, { sound: 'error', hold: 6000 });
     } finally {
       setScanning(false);
@@ -213,6 +215,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     const cam = new LiveCam(videoRef.current!, overlayRef.current!);
     cam.mode = readMode();
     cam.onStatus = setStatus;
+    if (roomMode) cam.setPaused(true);
     cam.onAutoSnap = (shot: Shot) => {
       setFlash((f) => f + 1);
       Sound.play('select');
@@ -364,27 +367,26 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     if (!images.length) return;
 
     try {
-      setScanning(true);
       camRef.current?.setPaused(true);
       showPreview(null);
       setRoom(null);
 
-      // Single item photo -> trigger AI scan immediately
-      if (images.length === 1) {
-        const file = images[0];
-        say(`Scanning item photo ${file.name}...`, { hold: 2000 });
-        const dataUrl = await Media.imageFileToDataUrl(file);
+      // Room mode or single item photo -> trigger AI scan immediately
+      if (live.current.roomMode || images.length === 1) {
+        say(live.current.roomMode ? 'Scanning room photo...' : `Scanning item photo ${images[0].name}...`, { hold: 2000 });
+        const dataUrls = await Promise.all(images.map((f) => Media.imageFileToDataUrl(f)));
         let nextGeo = live.current.geo;
-        const gps = await Media.readExifGps(file);
+        const gps = await Media.readExifGps(images[0]);
         if (gps) nextGeo = { ...gps, accuracy_m: null, source: 'exif' };
         setGeo(nextGeo);
-        setFrames([dataUrl]);
+        setFrames(dataUrls);
         setSource('photo');
-        await runScan([dataUrl], 'photo');
+        await runScan(dataUrls, 'photo');
         return;
       }
 
       // Batch upload: multiple item photos -> scan each and aggregate into room grid
+      setScanning(true);
       say(`Batch scanning ${images.length} item photos...`, { hold: 3000 });
       const batchItems: RoomView['items'] = [];
       let detectedCurrency = 'IDR';
@@ -421,7 +423,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
       stageRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
       setScanning(false);
-      camRef.current?.setPaused(false);
+      camRef.current?.setPaused(live.current.roomMode);
       say(`Upload failed: ${(err as Error).message}`, { sound: 'error' });
     }
   };
@@ -437,7 +439,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
     setTagsText('');
     setCaught(false);
     setSource('camera');
-    camRef.current?.setPaused(false);
+    camRef.current?.setPaused(live.current.roomMode);
   }, []);
 
   const backToCamera = () => {
@@ -493,7 +495,11 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
 
   const toggleRoom = () => {
     Sound.play('click');
-    setRoomMode((r) => !r);
+    setRoomMode((r: boolean) => {
+      const next = !r;
+      camRef.current?.setPaused(next);
+      return next;
+    });
     showPreview(null);
     setRoom(null);
   };
@@ -506,8 +512,8 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
 
   // ------------------------------------------------------------- render
   const vfStatus = !usingCamera
-    ? { cls: 'phase-upload', text: `UPLOADED ${frames.length} IMAGE(S) · PRESS SCAN` }
-    : { cls: `phase-${status.phase}`, text: statusText(status, mode, scanning) };
+    ? { cls: 'phase-upload', text: roomMode ? 'ROOM PHOTO UPLOADED · PRESS SCAN' : `UPLOADED ${frames.length} IMAGE(S) · PRESS SCAN` }
+    : { cls: `phase-${status.phase}`, text: statusText(status, mode, scanning, roomMode) };
 
   return (
     <section className={`view view-scan${active ? ' active' : ''}`} aria-hidden={!active}>
@@ -612,7 +618,7 @@ export function ScanView({ active, keysEnabled }: { active: boolean; keysEnabled
             </span>
           )}
         </div>
-        <div className="card-stage" title="Your scanned card appears here. Nothing is saved until you press SAVE">
+        <div className={`card-stage${room ? ' room-stage' : ''}`} title="Your scanned card appears here. Nothing is saved until you press SAVE">
           {scanning ? (
             <Scanner cover={frames[0]} />
           ) : room ? (

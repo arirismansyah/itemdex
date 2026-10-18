@@ -230,7 +230,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 /* ---------------------------------------------------------- scan view */
 .view-scan { gap: 24px; padding: 20px 28px 92px; }
 .scan-input { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; }
-.scan-output { width: 420px; flex-shrink: 0; display: flex; flex-direction: column; }
+.scan-output { width: 420px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .panel-head .panel-title { margin: 0; }
 
@@ -344,12 +344,30 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 
 /* card stage */
 .card-stage { flex: 1; display: grid; place-items: center; min-height: 0; perspective: 1200px; }
+.card-stage.room-stage {
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  perspective: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) var(--shadow);
+  padding: 4px 6px 16px;
+  overscroll-behavior: contain;
+}
 .stage-idle { display: flex; flex-direction: column; align-items: center; gap: 22px; }
 .stage-idle p { font-family: var(--pixel); font-size: 10px; color: var(--muted); }
 .stage-idle .card { animation: float 3s ease-in-out infinite; }
 @keyframes float { 50% { transform: translateY(-10px) rotate(1deg); } }
 
-.result-actions { display: flex; gap: 12px; justify-content: center; padding-top: 18px; }
+.result-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  padding-top: 14px;
+  position: relative;
+  z-index: 25;
+  flex-shrink: 0;
+}
 
 .scanner { display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .scanner-screen {
@@ -752,7 +770,14 @@ table.data td { padding: 2px 0; }
 .ask-banner { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 12px; font-family: var(--pixel); font-size: 8px; }
 .ask-banner span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ask-banner b { color: var(--accent); }
-.room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; width: 100%; }
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  width: 100%;
+  padding-bottom: 8px;
+}
+.room-grid .card { --w: 165px; margin: 0 auto; }
 .room-pick { position: relative; display: block; cursor: pointer; opacity: .45; }
 .room-pick.on { opacity: 1; }
 .room-pick > input { position: absolute; top: 6px; left: 6px; z-index: 3; width: 20px; height: 20px; accent-color: var(--green); }
@@ -868,10 +893,27 @@ table.data td { padding: 2px 0; }
   .scan-btn { width: 100%; height: 50px; }
 
   .card-stage { min-height: 360px; padding: 8px 0; }
+  .card-stage.room-stage {
+    min-height: 240px;
+    max-height: min(60vh, 520px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 4px 14px;
+  }
   .card-stage .card { --w: min(340px, calc(100vw - 64px)); }
+  .room-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .room-grid .card { --w: min(160px, calc((100vw - 72px) / 2)); }
   .scanner-screen, .scanner-bar { width: min(320px, calc(100vw - 64px)); }
   .scanner-screen { height: auto; aspect-ratio: 1; }
-  .result-actions { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom)); background: var(--panel); padding: 12px 0 4px; }
+  .result-actions {
+    position: sticky;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    background: var(--panel);
+    padding: 12px 0 6px;
+    z-index: 25;
+    box-shadow: 0 -8px 16px -2px var(--panel);
+  }
   .result-actions .btn { flex: 1; }
 
   .view-collection { padding: 14px 12px 0; gap: 14px; }

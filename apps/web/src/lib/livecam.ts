@@ -134,7 +134,13 @@ export class LiveCam {
   // Pause detection while a card is being scanned or reviewed.
   setPaused(p: boolean) {
     this.paused = p;
-    if (!p) { this.det = null; this.streak = 0; }
+    if (p) {
+      this.inFlight?.abort();
+      this.inFlight = null;
+    } else {
+      this.det = null;
+      this.streak = 0;
+    }
   }
 
   // Returns { frames: [crop?, full], name } for the current frame.
