@@ -10,7 +10,7 @@ import {
 } from '@tanstack/react-query';
 import type {
   AiConfig, AiTest, AskFilters, Card, DetectResult, Household, InvoiceResult, Item, ItemList, Listing, Meta, Platform, PriceCheck,
-  PriceCheckResult, RoomResult, ScanResult, Session, ShopeeStatus, Sort, Source, Stats,
+  PriceCheckResult, RoomResult, ScanResult, Session, ShopeeListing, ShopeeStatus, Sort, Source, Stats,
 } from '@itemdex/shared';
 import { localeBody } from './locale';
 import { playerName } from './player';
@@ -202,6 +202,16 @@ export const useReturnItem = () =>
 
 export const useVerifyPrice = () =>
   useItemMutation((id: string) => api<{ item: Item }>(`/items/${id}/comps`, { method: 'POST' }));
+
+// Screenshots of Shopee search results -> listings to confirm (nothing saved yet).
+export type ReadListing = ShopeeListing & { match: boolean };
+export const readShopeeShots = (id: string, images: string[]) =>
+  api<{ query: string; listings: ReadListing[] }>(`/items/${id}/comps/read`, { method: 'POST', body: { images } });
+
+// Shopee listings read in the user's own browser (bookmarklet or pasted page).
+export const useSendShopee = () =>
+  useItemMutation(({ id, listings }: { id: string; listings: ShopeeListing[] }) =>
+    api<{ item: Item }>(`/items/${id}/comps`, { method: 'POST', body: { listings } }));
 
 export const useReceipt = () =>
   useItemMutation(({ id, image }: { id: string; image: string }) =>

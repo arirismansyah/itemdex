@@ -4,13 +4,13 @@
 export interface LocalePreset { id: string; label: string; language: string; currency: string; market: string }
 
 export const LOCALES: LocalePreset[] = [
-  { id: 'id', label: 'ID · Bahasa · IDR', language: 'Indonesian', currency: 'IDR', market: 'Indonesian' },
-  { id: 'us', label: 'US · English · USD', language: 'English', currency: 'USD', market: 'US' },
-  { id: 'sg', label: 'SG · English · SGD', language: 'English', currency: 'SGD', market: 'Singapore' },
-  { id: 'my', label: 'MY · Malay · MYR', language: 'Malay', currency: 'MYR', market: 'Malaysian' },
-  { id: 'jp', label: 'JP · Japanese · JPY', language: 'Japanese', currency: 'JPY', market: 'Japanese' },
-  { id: 'in', label: 'IN · English · INR', language: 'English', currency: 'INR', market: 'Indian' },
-  { id: 'au', label: 'AU · English · AUD', language: 'English', currency: 'AUD', market: 'Australian' },
+  { id: 'id', label: 'ID · IDR · Bahasa', language: 'Indonesian', currency: 'IDR', market: 'Indonesian' },
+  { id: 'us', label: 'US · USD · English', language: 'English', currency: 'USD', market: 'US' },
+  { id: 'sg', label: 'SG · SGD · English', language: 'English', currency: 'SGD', market: 'Singapore' },
+  { id: 'my', label: 'MY · MYR · Malay', language: 'Malay', currency: 'MYR', market: 'Malaysian' },
+  { id: 'jp', label: 'JP · JPY · Japanese', language: 'Japanese', currency: 'JPY', market: 'Japanese' },
+  { id: 'in', label: 'IN · INR · English', language: 'English', currency: 'INR', market: 'Indian' },
+  { id: 'au', label: 'AU · AUD · English', language: 'English', currency: 'AUD', market: 'Australian' },
 ];
 
 const KEY = 'itemdex.locale';

@@ -40,7 +40,7 @@ Why it stays light and smooth:
 | Sale listing | item → SELL IT | `POST /items/:id/listing` (generic, tokopedia, facebook, ebay) |
 | Inventory report | COLLECTION → CSV / REPORT | `GET /report?format=csv\|html` (HTML → Save as PDF) |
 | Room scan | SCAN → ROOM | `POST /scan/room`: one photo, a card per item |
-| Price check | cart icon → log in, then item → CHECK ON SHOPEE | `POST /items/:id/comps`; uses your saved Shopee session, sets the value from 3+ listings (IDR only). Without a session the value stays the AI estimate |
+| Price check | item → CHECK ON SHOPEE (runs in your browser) | `POST /items/:id/comps` with `{ listings }` read by the ITEMDEX bookmark on the Shopee search page; sets the value from 3+ matching listings (IDR only). Empty body = automatic check with a session saved on the service machine |
 | AI server settings | ⚙ icon in the header | provider presets (Claude, DeepSeek, Gemini, OpenAI, Ollama, custom), URL, API key and model; test button lists its models. Saved in the database and overrides `LLM_*`. With accounts, only the first account may change it |
 | Ask in plain words | COLLECTION → ASK | `POST /ask` returns filters for `GET /items` |
 | Households | sign-in screen | `ACCOUNTS=true`; share the invite code to share a collection |
@@ -83,19 +83,22 @@ docs and are covered by offline tests, so report any provider that fails the TES
 
 ### Optional: Shopee price check
 
-The AI's price is an estimate. To check a price against real Shopee listings:
+The AI's price is an estimate. To check it against real Shopee listings, open an item priced in IDR and press
+**CHECK ON SHOPEE**. The check runs in your own browser with your own Shopee login, so it works on a hosted service too:
 
-It uses your installed Google Chrome (or Edge). Without either, download Playwright's Chromium once:
+1. Once: drag the **★ ITEMDEX ⇢** button (in the panel or the 🛒 menu) to your bookmarks bar.
+2. Press **OPEN SHOPEE**: the search opens in a new tab. Log in if Shopee asks, scroll to load more results.
+3. Click the **ITEMDEX** bookmark on that tab. The listings go back to the ITEMDEX tab and the value updates
+   when 3+ of them match. If the tab can't reach ITEMDEX, the bookmark copies them: press **PASTE FROM CLIPBOARD**.
 
-```bash
-npx playwright-core install chromium
-```
+**On a phone** there is nothing to set up: press OPEN SHOPEE (it opens the Shopee app), take 1–4 screenshots of the
+results, go back and press **UPLOAD SCREENSHOTS**. The AI reads the titles and prices (`POST /items/:id/comps/read`,
+nothing saved), you untick anything wrong and press **USE N PRICES**. Pasting the copied page text also works.
 
-Then click the **🛒 icon** in the app and log in to Shopee in the window that opens (you type your own password;
-only the browser session is saved to `.itemdex/shopee-state.json`, which is git-ignored). Items priced in IDR now
-have a **CHECK ON SHOPEE** button. Without the session, values stay the AI estimate. Shopee may block automated
-browsers or limit the account, so use a spare account. This works only when the service runs on your own computer
-(not in Docker or the packaged desktop app).
+**Automatic (service on your own computer only).** With Google Chrome/Edge (or `npx playwright-core install chromium`),
+the 🛒 menu can save a Shopee login (you type your own password; only the session is saved to
+`.itemdex/shopee-state.json`, git-ignored). CHECK ON SHOPEE then searches by itself. Shopee may block automated
+browsers or limit the account, so use a spare account.
 
 ### Optional: accounts and households
 

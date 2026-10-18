@@ -23,6 +23,7 @@ const REPLIES: Record<string, unknown> = {
   itemdex_room: { items: [{ ...CARD, box: [100, 100, 500, 500] }, { ...CARD, name: 'Speck', box: [0, 0, 5, 5] }] },
   itemdex_listing: { title: 'Bosch drill', description: 'Works great', price: 525000 },
   itemdex_ask: { q: 'garage', types: ['TOOL', 'NOPE'], rarities: [], min_value: 50000, max_value: 0, sort: 'value', flag: 'bogus' },
+  itemdex_shopee_shots: { is_listing_page: true, listings: [{ title: 'Bosch GSB 13 RE mulus', price: 950000 }, { title: 'Makita HP1630', price: 700000 }, { title: '', price: 5 }] },
   itemdex_receipt: { is_receipt: true, store: 'Shop', date: '2026-01-31', total: 150000, warranty_months: 12 },
 };
 
@@ -131,6 +132,22 @@ assert.equal(fromAnthropicResponse({ content: [{ type: 'text', text: 'ok' }] }),
   // Shopee not connected: status says so and the price check refuses (value stays the AI estimate)
   assert.equal((await call('GET', '/shopee')).body.connected, false);
   assert.equal((await call('POST', `/items/${id}/comps`)).status, 409);
+
+  // Shopee in the browser: listings from the bookmarklet; other products, bad prices and non-Shopee links are dropped
+  const listings = [1000000, 1100000, 1200000].map((price, i) => ({ title: `Bosch GSB 13 RE bekas ${i}`, price, url: `https://shopee.co.id/p-${i}` }));
+  const junk = [{ title: 'Makita drill', price: 900000, url: 'x' }, { title: 'Bosch GSB', price: 'abc' }, { title: 'Bosch GSB evil', price: 1100000, url: 'javascript:alert(1)' }];
+  const idr = (await call('POST', '/items', { card: CARD, currency: 'IDR' })).body.item.id;
+  const viaBrowser = (await call('POST', `/items/${idr}/comps`, { listings: [...listings, ...junk] })).body.item;
+  assert.deepEqual([viaBrowser.comps.n, viaBrowser.value.typical], [4, 990000], 'median of 4 matches, 10% below asking');
+  assert.ok(viaBrowser.comps.sources.every((s: { url: string }) => s.url.startsWith('https://shopee.co.id/')));
+  assert.equal((await call('POST', `/items/${idr}/comps`, { listings: [] })).status, 404);
+  // Screenshots: the AI reads the cards, nothing is saved until the user sends them to /comps
+  const shots = (await call('POST', `/items/${idr}/comps/read`, { images: [IMG] })).body;
+  assert.deepEqual(shots.listings.map((l: { title: string; match: boolean }) => [l.title, l.match]), [['Bosch GSB 13 RE mulus', true], ['Makita HP1630', false]]);
+  assert.equal((await call('POST', `/items/${idr}/comps/read`, { images: [] })).status, 400);
+  assert.equal((await call('POST', `/items/${id}/comps/read`, { images: [IMG] })).status, 400, 'not priced in IDR');
+  await call('DELETE', `/items/${idr}`);
+  assert.equal((await call('POST', '/game/guess', { id, guess: 0 })).status, 400, 'an empty guess does not burn the item');
 
   // Listing, ask, room, reports
   assert.equal((await call('POST', `/items/${id}/listing`, { platform: 'tokopedia' })).body.listing.price, 525000);

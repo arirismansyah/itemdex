@@ -1,11 +1,12 @@
-// Price check on Shopee Indonesia: reads the public search page with a headless browser (Playwright),
-// logged in with a session the user saves once through the app (Shopee blocks anonymous browsers).
-// Needs Google Chrome (or `npx playwright-core install chromium`). Without a saved session the feature is off and
-// values stay the AI estimates.
+// Price check on Shopee Indonesia. Two ways in:
+// - in the user's browser (default, works for a hosted service): the app opens the Shopee search, a bookmarklet
+//   reads the listings and the client posts them here; compsFromListings() filters and summarizes them.
+// - on this machine (local/desktop only): a headless browser (Playwright) reads the search page, logged in with a
+//   session the user saves once through the app. Needs Google Chrome (or `npx playwright-core install chromium`).
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Comp, Comps } from '@itemdex/shared';
+import { SHOPEE_EXTRACT, shopeeSearchUrl, type Comp, type Comps } from '@itemdex/shared';
 
 export interface ShopeeConfig {
   state: string; // storageState file holding the login cookies
@@ -94,35 +95,43 @@ export function summarize(query: string, listings: Comp[], at = new Date().toISO
   };
 }
 
-// Runs in the page: every link whose text carries an "Rp" price is a product card.
-// Passed as a string so the server's TypeScript needs no DOM types.
-const EXTRACT = `(() => {
-  const out = [], seen = new Set();
-  for (const a of document.querySelectorAll('a[href]')) {
-    const text = a.innerText || '';
-    const m = /Rp\\s?([\\d.]+)/.exec(text);
-    if (!m || seen.has(a.href)) continue;
-    const price = Number(m[1].replace(/\\./g, ''));
-    const title = text.split('\\n').map((s) => s.trim())
-      .filter((l) => l.length > 8 && !/^Rp/.test(l)).sort((x, y) => y.length - x.length)[0];
-    if (price && title) { seen.add(a.href); out.push({ title, price, url: a.href }); }
+// At least half the query words must appear in the title, otherwise it is a different product.
+export function matcher(query: string) {
+  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
+  const need = Math.ceil(words.length / 2);
+  return (title: string) => words.filter((w) => title.toLowerCase().includes(w)).length >= need;
+}
+
+// Raw listings (from the bookmarklet, pasted text or Playwright) -> Comps, or null when none match.
+// Untrusted input: only titles, whole prices and shopee.co.id links survive.
+export function compsFromListings(query: string, raw: unknown, discount: number): Comps | null {
+  const search = shopeeSearchUrl(query);
+  const matches = matcher(query);
+  const listings: Comp[] = [];
+  for (const r of (Array.isArray(raw) ? raw : []).slice(0, 200)) {
+    const title = typeof r?.title === 'string' ? r.title.replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+    const price = Math.round(Number(r?.price));
+    if (!title || !Number.isFinite(price) || price < 1000 || price > 1e11) continue;
+    if (!matches(title)) continue;
+    let url = search;
+    try {
+      const u = new URL(String(r?.url));
+      if (u.protocol === 'https:' && /(^|\.)shopee\.co\.id$/.test(u.hostname)) url = u.href;
+    } catch { /* no link: point at the search */ }
+    listings.push({ title, price: Math.round(price * discount), url, site: 'shopee' });
   }
-  return out;
-})()`;
+  return listings.length ? summarize(query, listings) : null;
+}
 
 export async function fetchComps(query: string, cfg: ShopeeConfig): Promise<Comps | null> {
   if (!connected(cfg)) throw new Error('Shopee is not connected');
   const browser = await launch(true);
-  // At least half the query words must appear in the title, otherwise it is a different product.
-  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
-  const need = Math.ceil(words.length / 2);
   try {
     const ctx = await browser.newContext({
       storageState: cfg.state, userAgent: UA, locale: 'id-ID', viewport: { width: 1280, height: 1600 },
     });
     const page = await ctx.newPage();
-    // "bekas" = second-hand, so new-price listings rank lower.
-    await page.goto(`https://shopee.co.id/search?keyword=${encodeURIComponent(`${query} bekas`)}`, {
+    await page.goto(shopeeSearchUrl(query), {
       waitUntil: 'domcontentloaded', timeout: 25_000,
     });
     await page.waitForTimeout(4000);
@@ -132,11 +141,7 @@ export async function fetchComps(query: string, cfg: ShopeeConfig): Promise<Comp
     }
     await page.mouse.wheel(0, 1500); // lazy-loaded cards
     await page.waitForTimeout(1500);
-    const found = (await page.evaluate(EXTRACT)) as Omit<Comp, 'site'>[];
-    const listings: Comp[] = found
-      .filter((c) => words.filter((w) => c.title.toLowerCase().includes(w)).length >= need)
-      .map((c) => ({ ...c, site: 'shopee', title: c.title.slice(0, 120), price: Math.round(c.price * cfg.discount) }));
-    return listings.length ? summarize(query, listings) : null;
+    return compsFromListings(query, await page.evaluate(SHOPEE_EXTRACT), cfg.discount);
   } finally {
     await browser.close();
   }

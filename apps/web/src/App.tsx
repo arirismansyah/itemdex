@@ -33,6 +33,7 @@ export function App() {
   const token = useToken();
   const stats = useStats(meta.isSuccess && (!meta.data.accounts || !!token));
   const [localeId, setLocale] = useState(getLocaleId);
+  const narrow = useNarrow();
   const player = usePlayer();
   const qc = useQueryClient();
 
@@ -107,11 +108,11 @@ export function App() {
             className="locale-select"
             value={localeId}
             onChange={(e) => { setLocaleId(e.target.value); setLocale(e.target.value); Sound.play('click'); }}
-            title="Language, currency and market for new scans and listings"
+            title={`Language, currency and market for new scans and listings${localeId ? ` (${LOCALES.find((l) => l.id === localeId)?.language})` : ''}`}
             aria-label="Scan locale"
           >
             <option value="">{meta.data ? `DEFAULT · ${meta.data.currency}` : 'DEFAULT'}</option>
-            {LOCALES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            {LOCALES.map((l) => <option key={l.id} value={l.id}>{narrow ? `${l.id.toUpperCase()} · ${l.currency}` : l.label}</option>)}
           </select>
           <AiSettings />
           <ShopeeMenu />
@@ -143,4 +144,17 @@ export function App() {
       <Dialog />
     </div>
   );
+}
+
+// Narrow headers (laptops under 1200px, phones) get short locale labels: "ID · IDR" instead of "ID · IDR · Bahasa".
+function useNarrow() {
+  const query = '(max-width: 1200px)';
+  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return narrow;
 }

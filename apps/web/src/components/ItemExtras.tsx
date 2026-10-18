@@ -8,6 +8,7 @@ import {
 import { say } from '../lib/dialog';
 import { ago, date, money } from '../lib/format';
 import { imageFileToDataUrl } from '../lib/media';
+import { ShopeeCheck } from './ShopeeCheck';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const fail = (err: unknown) => say((err as Error).message, { sound: 'error' });
@@ -35,6 +36,7 @@ export function ValueBlock({ item }: { item: Item }) {
   const verify = useVerifyPrice();
   const recheck = useRecheckPrice();
   const priceOn = !!useMeta().data?.features?.price_check;
+  const [inBrowser, setInBrowser] = useState(false);
   const v = item.value;
   const cur = item.currency;
   const c = item.comps;
@@ -42,7 +44,9 @@ export function ValueBlock({ item }: { item: Item }) {
   const basis = web.length
     ? `WEB · ${web.length} LISTING${web.length === 1 ? '' : 'S'}`
     : c && v.reasoning.includes('Shopee') ? 'SHOPEE' : 'AI ESTIMATE';
-  const shopeeOn = cur === 'IDR' && !!shopee.data?.connected;
+  // Shopee works for every IDR item: on this machine when a session is saved, otherwise in the user's browser.
+  const shopeeOn = cur === 'IDR';
+  const serverShopee = !!shopee.data?.connected;
   // One list for both checks: web listings first, then the top Shopee ones.
   const sources = [...web, ...(c?.sources.slice(0, 4).map((s) => ({ ...s, site: s.site || 'shopee' })) ?? [])]
     .filter((s, i, all) => all.findIndex((x) => x.url === s.url) === i);
@@ -52,6 +56,7 @@ export function ValueBlock({ item }: { item: Item }) {
   ].filter(Boolean) as string[];
 
   const check = async () => {
+    if (!serverShopee) return setInBrowser((o) => !o);
     try {
       const { item: next } = await verify.mutateAsync(item.id);
       const n = next.comps?.n ?? 0;
@@ -115,16 +120,14 @@ export function ValueBlock({ item }: { item: Item }) {
             </button>
           )}
           {shopeeOn && (
-            <button className="btn btn-small" onClick={check} disabled={verify.isPending || recheck.isPending} title="Search Shopee for this item and set the value from real listings (takes about 15 seconds)">
+            <button className="btn btn-small" onClick={check} disabled={verify.isPending || recheck.isPending} title={serverShopee ? 'Search Shopee for this item and set the value from real listings (takes about 15 seconds)' : 'Check this item on Shopee in your own browser'}>
               {verify.isPending ? '⟳ SEARCHING SHOPEE...' : '⌕ CHECK ON SHOPEE'}
             </button>
           )}
         </div>
       )}
+      {shopeeOn && inBrowser && <ShopeeCheck item={item} onDone={() => setInBrowser(false)} />}
       {checked.length > 0 && <p className="muted small price-checked">{checked.join(' · ')}</p>}
-      {cur === 'IDR' && shopee.data && !shopee.data.connected && (
-        <p className="muted small">Connect Shopee from the 🛒 menu to also check real Shopee listings.</p>
-      )}
     </section>
   );
 }

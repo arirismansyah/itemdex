@@ -36,7 +36,8 @@ export function money(n: number, { compact = true, currency: cur = currency } = 
     });
     formatters.set(key, f);
   }
-  return f.format(n);
+  // Rupiah the marketplace way: "Rp195rb", "Rp1,9jt", "Rp1.850.000" (the pixel font makes spaces very wide).
+  return cur === 'IDR' ? f.format(n).replace(/\s+/g, '') : f.format(n);
 }
 
 export const date = (iso: string) => new Date(iso).toLocaleDateString('en-GB', {

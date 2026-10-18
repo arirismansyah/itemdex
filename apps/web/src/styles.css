@@ -111,6 +111,7 @@ button { touch-action: manipulation; }
 .tab.active::before { opacity: 1; animation: blink 1s steps(1) infinite; }
 
 .hud { display: flex; align-items: center; gap: 18px; }
+.player-name { width: 180px; min-width: 0; font-size: 18px; padding: 6px 10px; }
 .hud-stat { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
 .hud-stat span { font-family: var(--pixel); font-size: 7px; color: var(--muted); margin-bottom: 4px; }
 .hud-stat b { font-family: var(--pixel); font-size: 13px; color: var(--accent); }
@@ -756,7 +757,8 @@ table.data td { padding: 2px 0; }
 .room-pick { position: relative; display: block; cursor: pointer; opacity: .45; }
 .room-pick.on { opacity: 1; }
 .room-pick > input { position: absolute; top: 6px; left: 6px; z-index: 3; width: 20px; height: 20px; accent-color: var(--green); }
-.locale-select { font-size: 16px; padding: 4px 6px; max-width: 150px; }
+.locale-select { font-size: 16px; padding: 4px 8px; height: 34px; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-stat b { white-space: nowrap; }
 .account { position: relative; }
 .account-panel { position: absolute; right: 0; top: 40px; z-index: 30; min-width: 220px; display: flex; flex-direction: column; gap: 8px; }
 .auth-screen { display: grid; place-items: center; min-height: 100%; padding: 16px; }
@@ -770,9 +772,30 @@ table.data td { padding: 2px 0; }
 .ok { color: var(--green); }
 .auth-error { color: var(--red); margin: 0; }
 
+/* Laptop widths: the header shrinks step by step instead of running off the right edge. */
+@media (max-width: 1366px) {
+  .topbar { gap: 14px; padding: 12px 18px; }
+  .hud { gap: 12px; }
+  .tab { padding: 10px 10px 10px 22px; }
+  .player-name { width: 150px; }
+}
+@media (max-width: 1200px) {
+  .logo small { display: none; }
+  .logo h1 { font-size: 18px; }
+  .tab { font-size: 10px; }
+  .hud-led span { display: none; }
+  .locale-select { max-width: 130px; }
+}
 @media (max-width: 1100px) {
   .scan-output { width: 360px; }
-  .hud-led span { display: none; }
+  .hud { gap: 10px; }
+  .hud-stat:first-of-type { display: none; } /* item count is on the collection's ALL chip */
+  .player-name { width: 120px; }
+  .tab { font-size: 9px; padding: 8px 6px 8px 18px; }
+  .tab::before { left: 4px; }
+}
+@media (min-width: 901px) and (max-width: 1023px) {
+  .logo h1 { display: none; } /* the box icon stays */
 }
 
 @media (max-width: 900px) {
@@ -808,9 +831,10 @@ table.data td { padding: 2px 0; }
   .hud { display: contents; }
   .hud > * { order: 3; }
   .hud-stat { order: 1; }
-  .hud-stat:first-child { display: none; } /* item count is on the ALL chip */
+  .hud-stat:first-of-type { display: none; } /* item count is on the ALL chip */
   .hud-stat b { font-size: 11px; }
   .locale-select { flex: 1; min-width: 0; max-width: none; height: 34px; }
+  .player-name { flex: 1; width: auto; height: 34px; font-size: 16px; padding: 4px 8px; }
   .hud .icon-btn { flex-shrink: 0; }
   /* Menu popups anchor to the header, full width, instead of their button. */
   .topbar .account { position: static; }
@@ -959,24 +983,187 @@ table.data td { padding: 2px 0; }
 .price-actions .btn { flex: 1 1 180px; }
 .price-checked { margin: 8px 0 0; }
 
+/* ---------------------------------------------------------- shopee check in the browser */
+.shopee-check { margin-top: 12px; padding-top: 12px; border-top: 2px dashed var(--panel-2); font-size: 18px; }
+.shopee-check { display: flex; flex-direction: column; gap: 14px; }
+.shopee-check p { margin: 0; }
+.shopee-check details summary { cursor: pointer; color: var(--cyan); }
+.sc-step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; }
+.sc-step > b { display: grid; place-items: center; width: 26px; height: 26px; font-family: var(--pixel); font-size: 10px; background: var(--accent); color: var(--shadow); }
+.sc-step > div { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.sc-ways { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; width: 100%; align-items: stretch !important; }
+.sc-way { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px; border: 2px solid var(--panel-2); background: var(--bg); }
+.sc-way h5, .sc-review h5 { margin: 0; font-family: var(--pixel); font-size: 8px; color: var(--accent); line-height: 1.5; }
+.sc-way h5 em { font-style: normal; color: var(--muted); }
+.sc-way label.btn { cursor: pointer; }
+.sc-way label.btn.busy { animation: blink 1s steps(1) infinite; }
+.sc-review { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 2px solid var(--accent); }
+.sc-review ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.sc-review li { padding: 4px 0; border-bottom: 1px dashed var(--panel-2); }
+.sc-review li label { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; cursor: pointer; }
+.sc-review li input { width: 18px; height: 18px; margin: 0; accent-color: var(--green); }
+.sc-review li b { color: var(--accent); font-weight: normal; white-space: nowrap; }
+.sc-review li.off { opacity: .45; }
+.sc-review li small { font-family: var(--pixel); font-size: 6px; color: var(--red); margin-left: 26px; }
+.sc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.shopee-check textarea { width: 100%; margin-top: 8px; resize: vertical; }
+.bookmarklet { cursor: grab; }
+.bookmarklet:active { cursor: grabbing; }
+
+.shopee-panel { width: 360px; max-height: calc(100vh - 120px); overflow-y: auto; gap: 12px; }
+.shopee-panel .panel-title { margin: 0; }
+.shopee-panel p { margin: 0; line-height: 1.15; }
+.sp-sec { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 2px dashed var(--panel-2); }
+.sp-sec h4 { margin: 0; font-family: var(--pixel); font-size: 9px; color: var(--accent); }
+.sp-sec h4 em { font-style: normal; color: var(--muted); }
+.sp-status { display: flex; align-items: center; gap: 8px; font-family: var(--pixel); font-size: 8px; color: var(--muted); }
+.sp-status i { width: 10px; height: 10px; flex-shrink: 0; background: var(--red); box-shadow: 0 0 0 2px var(--shadow); }
+.sp-status.on { color: var(--green); }
+.sp-status.on i { background: var(--green); box-shadow: 0 0 0 2px var(--shadow), 0 0 8px var(--green); }
+.sp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sp-actions .btn { flex: 1; }
+
+.bm-setup { display: flex; flex-direction: column; gap: 10px; }
+.bm-drag { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 10px 10px; border: 3px dashed var(--muted); background: var(--bg); }
+.bm-hint { font-family: var(--pixel); font-size: 7px; color: var(--muted); animation: blink 1.4s steps(1) infinite; }
+.bm-steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; font-size: 17px; line-height: 1.15; }
+.bm-steps b { color: var(--accent); font-weight: normal; }
+kbd { font-family: var(--pixel); font-size: 8px; padding: 2px 5px; border: 2px solid var(--muted); background: var(--shadow); white-space: nowrap; }
+.bm-alt summary { cursor: pointer; color: var(--cyan); font-size: 17px; }
+.bm-alt[open] { display: flex; flex-direction: column; gap: 8px; }
+.bm-alt[open] > .bm-setup { margin-top: 4px; }
+@media (max-width: 900px) {
+  .topbar .shopee-panel { width: auto; max-height: 75dvh; }
+}
+
 /* ---------------------------------------------------------- game */
-.player-name { width: 130px; font-family: var(--pixel); font-size: 8px; color: var(--accent); background: var(--bg); border: 3px solid var(--line); padding: 8px; }
-.game { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
-.game-me { grid-column: 1 / -1; }
-.bar { height: 14px; background: var(--bg); border: 3px solid var(--shadow); box-shadow: 0 0 0 2px var(--line); }
-.bar.big { height: 22px; margin: 8px 0 12px; }
-.bar i { display: block; height: 100%; background: var(--green); }
-.bar-row { display: grid; grid-template-columns: 90px 1fr 56px; gap: 10px; align-items: center; margin: 8px 0; font-size: 18px; }
-.bar-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-row b { font-family: var(--pixel); font-size: 8px; color: var(--accent); text-align: right; }
-.quest-item { display: block; width: 100%; margin: 6px 0; text-align: left; white-space: normal; }
-.badges { display: flex; flex-wrap: wrap; gap: 8px; }
-.badge { font-family: var(--pixel); font-size: 8px; padding: 8px; border: 3px solid var(--shadow); color: var(--muted); }
-.badge.got { color: var(--accent); border-color: var(--accent); }
-.board { width: 100%; border-collapse: collapse; font-size: 18px; }
-.board th { font-family: var(--pixel); font-size: 7px; color: var(--muted); text-align: left; padding: 4px; }
-.board td { padding: 4px; }
-.board tr.me { color: var(--accent); }
-.guess-img { display: block; max-width: 200px; max-height: 200px; margin: 0 auto 8px; border: 3px solid var(--line); }
-.view-game { overflow-y: auto; padding: 24px 32px 92px; display: none; }
+
+.view-game { overflow-y: auto; padding: 28px 32px 92px; display: none; }
 .view-game.active { display: block; }
+/* Desktop: wide main column + sidebar, each a plain stack (no stretched or ragged panels). */
+.game { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 28px; align-items: start; }
+.game-main, .game-side { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.game .panel p { margin: 0 0 10px; }
+.game .panel p:last-child { margin-bottom: 0; }
+
+/* Trainer card: level badge, then name, XP bar and stats side by side with it. */
+.trainer { display: flex; align-items: center; gap: 20px; }
+.trainer-lv {
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 84px; height: 84px;
+  background: var(--accent);
+  color: var(--shadow);
+  border: 3px solid var(--shadow);
+  box-shadow: 0 0 0 3px var(--line), 5px 5px 0 3px var(--shadow);
+  font-family: var(--pixel);
+}
+.trainer-lv small { font-size: 9px; }
+.trainer-lv b { font-size: 28px; line-height: 1.15; }
+.trainer-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.trainer-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; min-width: 0; }
+.trainer-head .panel-title { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trainer-title { font-family: var(--pixel); font-size: 9px; color: var(--accent); }
+.trainer-stats { display: flex; flex-wrap: wrap; gap: 4px 22px; font-size: 19px; }
+.trainer-stats b { color: var(--accent); font-weight: normal; }
+.trainer-help { margin-top: 16px !important; padding-top: 12px; border-top: 2px dashed var(--panel-2); }
+
+.game-quest.done { box-shadow: 0 0 0 4px var(--shadow), 8px 8px 0 4px rgba(0, 0, 0, .45), inset 0 0 0 4px #1f5e3e; }
+.game-quest.done .panel-title { color: var(--green); }
+.game-sub { font-family: var(--pixel); font-size: 8px; color: var(--muted); margin: 18px 0 8px; }
+
+.bar { height: 14px; background: var(--bg); border: 3px solid var(--shadow); box-shadow: 0 0 0 2px var(--line); }
+.bar.big { height: 20px; margin: 0; }
+.bar i { display: block; height: 100%; background: var(--green); transition: width .4s steps(8); }
+.bar-row { display: grid; grid-template-columns: minmax(70px, 110px) 1fr auto; gap: 10px; align-items: center; margin: 8px 0; font-size: 18px; }
+.bar-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-row b { font-family: var(--pixel); font-size: 8px; color: var(--accent); text-align: right; min-width: 40px; }
+
+.quest-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.quest-item { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; min-width: 0; margin: 0; text-align: left; white-space: normal; }
+.quest-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.quest-meta { font-size: 7px; color: var(--muted); line-height: 1.5; }
+
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.badge { display: flex; align-items: center; gap: 8px; min-width: 0; font-family: var(--pixel); font-size: 8px; line-height: 1.5; padding: 10px; border: 3px solid var(--shadow); background: var(--bg); color: var(--muted); }
+.badge i { font-style: normal; flex-shrink: 0; }
+.badge.got { color: var(--accent); border-color: var(--accent); background: var(--panel-2); }
+
+/* The sidebar is narrow: drop the extra columns by the table's own width, not the screen's. */
+.board-wrap { overflow-x: auto; margin: 0 -4px; container-type: inline-size; }
+.board { width: 100%; border-collapse: collapse; font-size: 18px; }
+.board th { font-family: var(--pixel); font-size: 7px; color: var(--muted); text-align: left; padding: 6px 4px; border-bottom: 2px dashed var(--panel-2); white-space: nowrap; }
+.board td { padding: 5px 4px; white-space: nowrap; }
+.board td:first-child { font-family: var(--pixel); font-size: 9px; width: 28px; }
+.board .board-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.board tr.rank-1 td:first-child { color: #ffd84a; }
+.board tr.rank-2 td:first-child { color: #d0d4e6; }
+.board tr.rank-3 td:first-child { color: #e0904a; }
+.board tr.me { color: var(--accent); background: var(--panel-2); }
+@container (max-width: 360px) {
+  .board .opt { display: none; }
+  .board .board-name { max-width: 120px; }
+}
+
+/* Guess the price: intro when idle; photo beside the form on wide screens. */
+.guess-intro { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
+.guess-mark {
+  flex-shrink: 0; display: grid; place-items: center; width: 64px; height: 64px;
+  font-family: var(--pixel); font-size: 30px; color: var(--accent);
+  background: var(--bg); border: 3px solid var(--accent); box-shadow: 4px 4px 0 var(--shadow);
+  animation: wobble 3s infinite;
+}
+.guess-rules { font-family: var(--pixel); font-size: 8px; color: var(--muted); line-height: 1.6; }
+.guess-rules b { color: var(--green); font-weight: normal; }
+.guess form { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; }
+.guess-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.guess .field { width: 100%; margin: 0; }
+.guess-img { display: block; width: 200px; aspect-ratio: 1; object-fit: cover; border: 3px solid var(--line); box-shadow: 4px 4px 0 var(--shadow); }
+.guess-name { font-size: 24px; margin: 0 !important; }
+.guess-result b { color: var(--accent); font-size: 28px; }
+.guess-row { display: flex; gap: 8px; }
+.guess-row input { flex: 1; min-width: 0; }
+.guess-btn { width: 100%; }
+.game-guess > .guess-btn { width: auto; min-width: 260px; }
+
+@media (max-width: 1100px) {
+  .game { grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); gap: 22px; }
+  .game-main, .game-side { gap: 22px; }
+}
+
+/* Phones and small tablets: one column; the two stacks dissolve so the panels can be reordered. */
+@media (max-width: 900px) {
+  .view-game { padding: 14px 12px calc(96px + env(safe-area-inset-bottom)); }
+  .game { display: flex; flex-direction: column; align-items: stretch; gap: 18px; }
+  .game-main, .game-side { display: contents; }
+  .game-me { order: 1; }
+  .game-quest { order: 2; }
+  .game-guess { order: 3; }
+  .game-board { order: 4; }
+  .game-dex { order: 5; }
+  .game-quality { order: 6; }
+  .game-badges { order: 7; }
+  .game-quest.done { box-shadow: 0 0 0 3px var(--shadow), inset 0 0 0 3px #1f5e3e; }
+  .trainer { gap: 14px; align-items: flex-start; }
+  .trainer-lv { width: 56px; height: 56px; box-shadow: 0 0 0 2px var(--line), 3px 3px 0 2px var(--shadow); }
+  .trainer-lv small { font-size: 7px; }
+  .trainer-lv b { font-size: 18px; }
+  .trainer-head { flex-direction: column; gap: 6px; }
+  .trainer-title { font-size: 8px; }
+  .trainer-stats { font-size: 17px; gap: 2px 14px; }
+  .bar.big { height: 16px; }
+  .bar-row { font-size: 17px; }
+  .quest-list { grid-template-columns: 1fr; gap: 8px; }
+  .badges { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+  .badge { font-size: 7px; padding: 8px; }
+  .guess-intro { gap: 14px; }
+  .guess-mark { width: 48px; height: 48px; font-size: 22px; }
+  .guess form { grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 12px; }
+  .guess-body { width: 100%; }
+  .guess .field { text-align: left; }
+  .guess-img { width: min(220px, 60vw); }
+  .game-guess > .guess-btn { width: 100%; }
+  .guess-name { font-size: 22px; }
+  .guess-row .btn { padding: 10px 12px; }
+  .guess-row input { font-size: 20px; } /* 16px+ keeps iOS from zooming in */
+}
